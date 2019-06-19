@@ -2,9 +2,9 @@
 // Created by MAC on 2019/6/19.
 //
 
-#include "bootloader.h"
+#include "bios.h"
 
 int main() {
-    BootLoader bootLoader;
+    BIOS bios;
     return 0;
 }
