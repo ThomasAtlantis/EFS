@@ -10,6 +10,7 @@
 #include <shellapi.h>
 #include <fstream>
 #include <utility>
+#include <ctime>
 #include "..\utilities.h"
 
 #define BLOCK_SIZE 1024
@@ -44,20 +45,22 @@ public:
         return true;
     }
 };
+#define BLOCK_CONTENT_SIZE (BLOCK_SIZE-sizeof(bid_t))
+#pragma pack (1)
+typedef struct {
+    bid_t freeMaxi; // 空闲块总数量
+    bid_t freeHead; // 第一个空闲块
+    bid_t dataHead; // 第一个数据块
+//    char padding[BLOCK_SIZE - 2 * sizeof(bid_t)];
+} SuperBlock;
+typedef struct {
+    bid_t blockNext;
+    char data[BLOCK_CONTENT_SIZE];
+} Block;
+#pragma pack ()
 
 class FBController { // 使用隐式链接分配
 private:
-#pragma pack (1)
-    typedef struct {
-        bid_t freeMaxi; // 空闲块总数量
-        bid_t blockNext;
-        char padding[BLOCK_SIZE - 2 * sizeof(bid_t)];
-    } SuperBlock;
-    typedef struct {
-        bid_t blockNext;
-        char data[BLOCK_SIZE - sizeof(bid_t)];
-    } Block;
-#pragma pack ()
     const size_t _blockSize; // 外存块大小
     const bid_t _blockMaxi; // 外存块总数量
     SuperBlock _superBlock; // 内存超级块缓冲区
@@ -65,12 +68,11 @@ private:
 public:
 
     FBController(VHDController& vhdc, bid_t blockMaxi, size_t blockSize = BLOCK_SIZE):
-        _vhdc(vhdc), _blockSize(blockSize), _blockMaxi(blockMaxi - 1) {
-    }
+        _vhdc(vhdc), _blockSize(blockSize), _blockMaxi(blockMaxi - 1) {}
 
     bool formatting() {
         _superBlock.freeMaxi = _blockMaxi;
-        _superBlock.blockNext = 1;
+        _superBlock.freeHead = 1;
         Block block;
         memset(block.data, 0, sizeof(block.data));
         for (bid_t i = 2; i < _blockMaxi; ++ i) {
@@ -92,8 +94,8 @@ public:
     bool recycle(bid_t blockID) { // 回收blockID指定的块
         Block block;
         _vhdc.readBlock((char *) & block, blockID);
-        bid_t sav = _superBlock.blockNext;
-        _superBlock.blockNext = blockID;
+        bid_t sav = _superBlock.freeHead;
+        _superBlock.freeHead = blockID;
         block.blockNext = sav;
         _vhdc.writeBlock((char *) & block, blockID);
         _superBlock.freeMaxi ++;
@@ -103,38 +105,43 @@ public:
     bool distribute(bid_t & blockID) { // 分配一个空闲块，并将块号放到blockID中，若失败则返回false
         if (_superBlock.freeMaxi == 0) return false;
         Block block;
-        blockID = _superBlock.blockNext;
+        blockID = _superBlock.freeHead;
         _vhdc.readBlock((char *) & block, blockID);
-        _superBlock.blockNext = block.blockNext;
+        _superBlock.freeHead = block.blockNext;
         _superBlock.freeMaxi --;
         return true;
+    }
+
+    SuperBlock& superBlock() {
+        return _superBlock;
     }
 };
 
 struct INode { // sizeof(INode) = 128
     bid_t bid; // i节点所在的磁盘块号
-    char name[FILENAME_MAXLEN]; // 文件名
+    char name[FILENAME_MAXLEN + 1]; // 文件名
     unsigned int size; // 文件大小
     time_t atime; // 访问时间
     time_t mtime; // 修改时间
     unsigned int blocks; // 文件所占块数计数
-    unsigned short bytes; // 最后一块的字节计数
-    unsigned int data; // 数据开始块号
-
+    unsigned int bytes; // 最后一块的字节计数
+    bid_t data; // 数据开始块号
+    bid_t nextINode; // 下一个i节点
     INode() {
         memset(&this->bid, 0, sizeof(INode));
     }
 };
 
-class FSController {
+class FSController { // 只支持创建和删除，不支持修改
 private:
     VHDController& _vhdc; // 通过引用获得虚拟磁盘层的接口
-    FBController _fbc;  // 数据区空闲块管理模块
-    FBController _ifbc; // i节点区空闲块管理模块
+    FBController _fbc;  // 空闲块管理模块
     const bid_t _blockMaxi;
 public:
     FSController(VHDController& vhdc, bid_t blockMaxi):
-        _vhdc(vhdc), _blockMaxi(blockMaxi), _fbc(vhdc, blockMaxi), _ifbc(vhdc, blockMaxi) {}
+        _vhdc(vhdc), _blockMaxi(blockMaxi), _fbc(vhdc, blockMaxi) {
+        _fbc.loadSuperBLock();
+    }
     // i节点操作
     bool getINodeByID(bid_t id, INode& iNode) {
         _vhdc.readBlock((char *) & iNode, id);
@@ -142,21 +149,63 @@ public:
     bool saveINodeByID(bid_t id, const INode& iNode) {
         _vhdc.writeBlock((char *) & iNode, id);
     }
+    // TODO: 回归测试
     // 文件操作
-
-    // TODO: 链式读写文件
-    bool readFileToBuf(const INode& cur, int start, int len, char* buf) { // 读文件到内存缓冲区
-
+    bool readFileToBuf(bid_t id, char* buf) { // 读文件到内存缓冲区
+        INode iNode;
+        if (!getINodeByID(id, iNode)) return false;
+        if (iNode.blocks * BLOCK_CONTENT_SIZE > sizeof(buf)) return false;
+        char * p = buf; bid_t blockID = iNode.data;
+        Block block;
+        for (int i = 0; i < iNode.blocks; ++ i) {
+            _vhdc.readBlock((char *) & block, blockID);
+            strcpy_s(p, BLOCK_CONTENT_SIZE, block.data);
+            blockID = block.blockNext;
+            p += BLOCK_CONTENT_SIZE;
+        }
+        return true;
     }
-    bool appendBlocksToFile(INode& cur, int blockCnt) { // 追加空白块到文件尾
-
+    bool createFile(INode& iNode, string fileName) {
+        bid_t blockID;
+        if (fileName.length() > FILENAME_MAXLEN ||
+            !_fbc.distribute(blockID)) return false;
+        iNode.mtime = iNode.atime = time(nullptr);
+        strcpy_s(iNode.name, std::min(static_cast<size_t>(FILENAME_MAXLEN),
+            fileName.length()), fileName.c_str());
+        iNode.bid = blockID;
+        iNode.nextINode = _fbc.superBlock().dataHead;
+        _fbc.superBlock().dataHead = iNode.bid;
+        return saveINodeByID(blockID, iNode);
     }
-    bool writeFileFromBuf(INode& cur, int start, int len, char* buf) { // 写内存缓冲区到文件
-
+    // TODO: to be continue
+    bool writeFileFromBuf(INode& iNode, char* buf, unsigned int length) { // 写内存缓冲区到文件
+        // 文件iNode必须为新创建的
+        iNode.size = length;
+        iNode.blocks = length / BLOCK_CONTENT_SIZE;
+        iNode.bytes = length % BLOCK_CONTENT_SIZE;
+        bid_t preID, blockID;
+        Block block;
+        char * p = buf;
+        if (!_fbc.distribute(preID)) return false;
+        iNode.data = preID;
+        for (int i = 0; i < iNode.blocks - 1; ++ i) {
+            if (!_fbc.distribute(blockID)) return false;
+            block.blockNext = blockID;
+            strcpy_s(block.data, BLOCK_CONTENT_SIZE, p);
+            p += BLOCK_CONTENT_SIZE;
+            _vhdc.writeBlock((char *) & block, preID);
+            preID = blockID;
+        }
+        strcpy_s(block.data, iNode.bytes, p);
+        _vhdc.writeBlock((char *) & block, preID);
+        return true;
     }
-    bool deleteFile(INode& cur) {
-
-    }
+//    bool deleteFile(INode& iNode) {
+//
+//    }
+//    vector<INode&> dir() {
+//
+//    }
 };
 
 class BIOS {
