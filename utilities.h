@@ -15,6 +15,7 @@ using std::string;
 using std::vector;
 using std::cout;
 using std::endl;
+using std::cin;
 
 #define all(x) (x).begin(),(x).end()
 
@@ -39,9 +40,11 @@ public:
         return files;
     }
     string ext(string fileName) {
-        for (size_t i = fileName.length() - 1; i >= 0; -- i)
-            if (fileName[i] == '.')
-                return fileName.substr(i + 1, fileName.length() - i - 1);
+        size_t index = fileName.rfind('.');
+        return fileName.substr(index + 1, fileName.length() - index - 1);
+    }
+    string name(string fileName) {
+        return fileName.substr(0, fileName.rfind('.'));
     }
 };
 

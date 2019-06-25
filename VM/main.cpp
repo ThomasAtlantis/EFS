@@ -5,6 +5,6 @@
 #include "bios.h"
 
 int main() {
-    BIOS bios;
+    BIOS().test();
     return 0;
 }
