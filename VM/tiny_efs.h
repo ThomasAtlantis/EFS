@@ -25,21 +25,20 @@ private:
     size_t _blockSize;
 public:
     explicit VHDController(string fileName, size_t blockSize = BLOCK_SIZE):
-        _fileName(std::move(fileName)), _blockSize(blockSize) {}
-    ~VHDController() = default;
+        _fileName(std::move(fileName)), _blockSize(blockSize) {
+        _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
+    }
+    ~VHDController() {
+        _fileStream.close();
+    }
     bool readBlock(char * buffer, bid_t blockID, int len = 1) { // 按块读
-        _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::binary);
         _fileStream.seekg(blockID * _blockSize, std::ios::beg);
         _fileStream.read(buffer, _blockSize * len);
-        if (!_fileStream) return false;
-        _fileStream.close();
         return true;
     }
     bool writeBlock(char * buffer, bid_t blockID, int len = 1) { // 按块写
-        _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
         _fileStream.seekp(blockID * _blockSize, std::ios::beg);
         _fileStream.write(buffer, _blockSize * len);
-        _fileStream.close();
         return !!_fileStream;
     }
 };
