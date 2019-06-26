@@ -8,14 +8,20 @@
 #include <afxres.h>
 #include <string>
 #include <iomanip>
+#include <stdlib.h>
 #include "../../utilities.h"
+
 using namespace std;
 class CLIController {
 
 private:
     string fileName;
 
+    string rootDir = "root@USER root";
+    string startSymble = "$";
+
     FileTool fileTool;
+    stringTool stringTool1;
 
 public:
     CLIController(){
@@ -23,30 +29,58 @@ public:
     }
     ~CLIController(){}
 
-    bool ReadCommand(){
-        string command;
-        cin >> command;
-       vector<string> vector2 = CommandResolution(command, " ");//命令行解析
-        string pCommand = vector2.at(0);
-        if(pCommand == "ls"){//列出目录
-            FileTool fileTool;
-            vector<string> vector1 = fileTool.dir("../VirtualMachine");
-            int flag = 0;
-            for(vector<string>::iterator iter1 = vector1.begin(); iter1!=vector1.end(); ++iter1 ){
-                string str = "";
-                for( size_t sty=0;sty!=(*iter1).size(); ++sty){
+    vector<string> getRootDir(){
+        vector<string> vector1;
+        vector1.push_back(rootDir);
+        vector1.push_back(startSymble);
+        return vector1;
+    }
 
-                    str += (*iter1)[sty]; //*iter1才是string数据
+    bool ReadCommand(){
+        char command[20];
+        gets(command);
+        vector<string> vector2 = stringTool1.split(command, " ");//命令行解析
+        string pCommand = vector2.at(0);
+        int preference = vector2.size()-1;
+        if(pCommand == "ls"){//列出目录
+            if(preference == 0){
+                vector<string> vector1 = fileTool.dir("../VirtualMachine");
+                int flag = 0;
+                for(vector<string>::iterator iter1 = vector1.begin(); iter1!=vector1.end(); ++iter1 ){
+                    string str = "";
+                    for( size_t sty=0;sty!=(*iter1).size(); ++sty){
+                        str += (*iter1)[sty]; //*iter1才是string数据
+                    }
+                    flag++;
+                    cout << setw(20) << setiosflags(ios::left) << str;
+                    if(flag%3 == 0) cout << endl;
                 }
-                flag++;
-                cout << setw(15) << setiosflags(ios::left) << str + "/";
-                if(flag%3 == 0) cout << endl;
+                cout << endl;
+            }else if(preference == 1){
+                if(vector2[1] == "-a"){
+                    cout << "Show all files and directories" << endl;
+                }
             }
-            cout << endl;
         }else if(pCommand == "ll"){
 
         }else if(pCommand == "cd"){
-
+            if(preference == 1){
+                //cout << vector2[1] << endl;
+                if(vector2[1] == ".."){
+                    vector<string> vector1 = stringTool1.split(rootDir, "/");
+                    if(vector1.size() == 1){
+                        cout << "arrive at root dirctory already" << endl;
+                    } else{
+                        rootDir = vector1.at(0);
+                        for(int i=1; i<vector1.size()-1; i++){
+                            rootDir += "/" + vector1.at(i);
+                        }
+                    }
+                }else{
+                    system("cls");
+                    rootDir += "/" + vector2[1];
+                }
+            }
         }else if(pCommand == "openr"){
 
         }else if(pCommand == "openw"){
@@ -56,8 +90,6 @@ public:
         }else if(pCommand == "vim"){
 
         }else if(pCommand == "rm"){
-
-        }else if(pCommand == "cd"){
 
         }else if(pCommand == "chmodv"){
 
@@ -78,7 +110,9 @@ public:
         }else if(pCommand == "clear"){
 
         }else if(pCommand == "exit"){
-
+            exit(0);
+        }else{
+            cout << "command not found" << endl;
         }
     }
 
@@ -104,18 +138,6 @@ public:
         else
             MessageBox(NULL,"The process could not be started",NULL,NULL);
     };
-
-    vector<string> CommandResolution(string command, string flag){
-        string str = command;
-        vector<string> pCommand;
-        size_t index = 0;
-        while(index < command.rfind(flag)){
-            index = str.find(flag);
-            pCommand.push_back(str.substr(0, index));
-            str = str.substr(index+1, command.length()-index);
-        }
-        return pCommand;
-    }
 
 };
 
