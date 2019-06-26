@@ -5,6 +5,8 @@
 #include "bios.h"
 
 int main() {
-    BIOS().test();
+    string exeName = BIOS().run();
+    system("cls");
+    WinExec(exeName.c_str(), SW_SHOW);
     return 0;
 }

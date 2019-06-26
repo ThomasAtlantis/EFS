@@ -5,8 +5,8 @@
 #include "format_tool.h"
 
 int main() {
-    FormatTool formatTool("data.vhd");
+    FormatTool formatTool("SLOT_X/USB_1/data.vhd");
     formatTool.compress("OS.exe");
-    formatTool.decompress("OS.iso");
+//    formatTool.decompress("OS.iso");
     return 0;
 }

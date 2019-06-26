@@ -140,7 +140,7 @@ public:
 #define INODE_PADDING_SIZE (BLOCK_SIZE \
     - sizeof(time_t) * 2 \
     - sizeof(unsigned int) * 3 \
-    - sizeof(bid_t) * 4 \
+    - sizeof(bid_t) * 5 \
     - FILENAME_MAXLEN - 1)
 #pragma pack (1)
 typedef struct { // sizeof(INode) = 128
@@ -150,7 +150,8 @@ typedef struct { // sizeof(INode) = 128
     unsigned int blocks; // 文件所占块数计数
     unsigned int bytes; // 最后一块的字节计数
     bid_t bid; // i节点所在的磁盘块号
-    bid_t data; // 数据开始块号
+    bid_t dataBegin; // 数据开始块号
+    bid_t dataEnd; // 数据结束块号
     bid_t nextINode; // 下一个i节点
     bid_t prevINode; // 上一个i节点
     char name[FILENAME_MAXLEN + 1]; // 文件名
@@ -181,7 +182,7 @@ public:
         INode iNode;
         if (!getINodeByID(id, iNode)) return false;
         if (iNode.blocks * BLOCK_CONTENT_SIZE > length) return false;
-        char * p = buf; bid_t blockID = iNode.data;
+        char * p = buf; bid_t blockID = iNode.dataBegin;
         Block block;
         for (int i = 0; i < iNode.blocks; ++ i) {
             _vhdc.readBlock((char *) & block, blockID);
@@ -202,7 +203,8 @@ public:
         iNode.bid = blockID;
         iNode.nextINode = _fbc.superBlock().dataHead;
         iNode.prevINode = 0;
-        iNode.data = 0;
+        iNode.dataBegin = 0;
+        iNode.dataEnd = 0;
         if (iNode.nextINode != 0) {
             INode nextINode;
             _vhdc.readBlock((char *) & nextINode, iNode.nextINode);
@@ -217,22 +219,27 @@ public:
         iNode.size = length;
         iNode.blocks = length / BLOCK_CONTENT_SIZE;
         iNode.bytes = length % BLOCK_CONTENT_SIZE;
-        if (iNode.bytes > 0) iNode.blocks ++;
         bid_t preID, blockID;
         Block block;
         char * p = buf;
         if (!_fbc.distribute(preID)) return false;
-        iNode.data = preID;
-        for (int i = 0; i < iNode.blocks - 1; ++ i) {
+        iNode.dataBegin = preID;
+        for (int i = 0; i < iNode.blocks; ++ i) {
             if (!_fbc.distribute(blockID)) return false;
             block.blockNext = blockID;
             BufferTool().copy(block.data, p, BLOCK_CONTENT_SIZE);
             p += BLOCK_CONTENT_SIZE;
             _vhdc.writeBlock((char *) & block, preID);
+            iNode.dataEnd = preID;
             preID = blockID;
         }
-        BufferTool().copy(block.data, p, iNode.bytes);
-        _vhdc.writeBlock((char *) & block, preID);
+        if (iNode.bytes > 0) {
+            iNode.blocks ++;
+            block.blockNext = 0;
+            BufferTool().copy(block.data, p, iNode.bytes);
+            _vhdc.writeBlock((char *) & block, preID);
+            iNode.dataEnd = preID;
+        } else _fbc.recycle(preID);
         return saveINodeByID(iNode.bid, iNode);
     }
     bool deleteFile(INode& iNode) {
@@ -243,13 +250,34 @@ public:
             _vhdc.writeBlock((char *) & prevINode, iNode.prevINode);
         } else {
             _fbc.superBlock().dataHead = iNode.nextINode;
-            _fbc.saveSuperBlock();
         }
         if (iNode.nextINode != 0) {
             _vhdc.readBlock((char *) & nextINode, iNode.nextINode);
             nextINode.prevINode = prevINode.bid;
             _vhdc.writeBlock((char *) & nextINode, iNode.nextINode);
         }
+        Block lastBlock;
+        if (iNode.dataEnd != 0) {
+            _vhdc.readBlock((char *) & lastBlock, iNode.dataEnd);
+            lastBlock.blockNext = _fbc.superBlock().freeHead;
+            _fbc.superBlock().freeHead = iNode.dataBegin;
+            _fbc.superBlock().freeMaxi += iNode.blocks;
+        }
+        _fbc.recycle(iNode.bid);
+        _fbc.saveSuperBlock();
+        return true;
+    }
+    bool decompressEXE(const string &exeName, INode& iNode) {
+        auto * buff = new char[iNode.blocks * BLOCK_CONTENT_SIZE];
+        readFileToBuf(iNode.bid, buff);
+        std::fstream _fileStream;
+        _fileStream.open(exeName, std::ios::out);
+        _fileStream.close();
+        _fileStream.open(exeName, std::ios::in| std::ios::out| std::ios::binary);
+        _fileStream.write(buff, iNode.size);
+//        cout << iNode.size << endl;
+        _fileStream.close();
+        delete buff;
         return true;
     }
     void flushDisk() {
