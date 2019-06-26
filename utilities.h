@@ -55,4 +55,24 @@ public:
     }
 };
 
+class stringTool {
+public:
+    vector<string> split(string str, string sep) {//将str用sep分割成多个子串
+        vector<string> result;
+        size_t index = str.find(sep);
+        while (index != string::npos)
+        {
+            result.push_back(str.substr(0, index));
+            str = str.substr(index + sep.length(),str.length() - index - sep.length());
+            while (str.find(sep) == 0) {
+                str = str.substr(sep.length(), str.length() - sep.length());
+            }
+            index = str.find(sep);
+        }
+        if (str.length()) result.push_back(str);
+        return result;
+    }
+};
+
+
 #endif //EFS_UTILITIES_H
