@@ -12,7 +12,6 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "../../VM/tiny_efs.h"
 
 using std::string;
 using std::cout;
@@ -43,14 +42,18 @@ typedef struct
     char mode;//文件类别或权限
     int parfDir;//父文件夹块号
 }iNode;
-typedef struct
-{
-    char name[FILENAME_MAXLEN + 1];//文件名(当前目录)
+
+typedef struct {
     int index;//块号
+    char name[FILENAME_MAXLEN + 1];//文件名(当前目录)
     char parfNmae[FILENAME_MAXLEN + 1];//父目录名
-    //int parfIndex;//父目录块号
-    int subFile[MAX_SUB]={-1};//子文件/夹 i节点块号，最多十个
-}DIR;//目录项
+    int subFile[MAX_SUB];//子文件/夹 i节点块号，最多十个
+} DIRHead;
+
+typedef struct {
+    int index;//块号
+    int subFile[MAX_SUB];//子文件/夹 i节点块号，最多十个
+} DIRData;//目录项
 
 
 class FileSystemController

@@ -20,7 +20,7 @@ private:
     std::fstream _fileStream; // 虚拟磁盘文件流
     size_t _blockSize;
 public:
-    explicit VHDController(string fileName, size_t blockSize = BLOCK_SIZE):
+    explicit VHDController(string fileName, size_t blockSize = _BLOCK_SIZE):
             _fileName(std::move(fileName)), _blockSize(blockSize) {
         _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
     }

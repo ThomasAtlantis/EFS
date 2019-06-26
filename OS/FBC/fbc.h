@@ -12,98 +12,91 @@
 #include "..\VHD\vhd.h"
 #include "..\params.h"
 
-#define BLOCK_CONTENT_SIZE (BLOCK_SIZE \
-    - sizeof(bid_t))
-#define SUPBLOCK_PADDING_SIZE (BLOCK_SIZE \
-    - sizeof(bid_t) * 3)
-#pragma pack (1)
-typedef struct {
-    bid_t freeMaxi; // 空闲块总数量
-    bid_t freeHead; // 第一个空闲块
-    bid_t dataHead; // 第一个数据块
-    char padding[SUPBLOCK_PADDING_SIZE];
-} SuperBlock;
-typedef struct {
-    bid_t blockNext;
-    char data[BLOCK_CONTENT_SIZE];
-} Block;
-#pragma pack ()
+#define _BLOCK_GROUP_SIZE 100
 
-class FBController { // 使用隐式链接分配
+#define _SUPBLOCK_PADDING_SIZE (_BLOCK_SIZE - \
+    sizeof(bid_t) * (1 + _BLOCK_GROUP_SIZE))
+
+class FBController { // 使用成组链接法管理空闲块
 private:
-    const size_t _blockSize; // 外存块大小
-    const bid_t _blockMaxi; // 外存块总数量
-    SuperBlock _superBlock; // 内存超级块缓冲区
+    #pragma pack (1)
+    typedef struct {
+        bid_t freeCount; // 空闲块总数量
+        bid_t freeStack[_BLOCK_GROUP_SIZE]; // 空闲块栈
+        char padding[_SUPBLOCK_PADDING_SIZE];
+    } SuperBlock;
+    #pragma pack ()
+    const bid_t _maxBlockID; // 受管理的最大块号
+    const bid_t _minBlockID; // 受管理的最小块号
+    SuperBlock * _superBlock; // 内存超级块缓冲区
     VHDController& _vhdc; // 通过引用vhdc调用VHD接口
+    char * newBlock() {
+        auto * block = new char [_BLOCK_SIZE];
+        memset(block, 0, _BLOCK_SIZE);
+        return block;
+    }
+    SuperBlock * newSuperBlock() {
+        auto * sb = new SuperBlock;
+        sb->freeCount = 0;
+        for (auto & freeBlockID: sb->freeStack)
+            freeBlockID = 0;
+        memset(sb->padding, 0, _SUPBLOCK_PADDING_SIZE);
+        return sb;
+    }
+    void push(SuperBlock * sb, bid_t blockID) {
+        sb->freeStack[sb->freeCount] = blockID;
+        sb->freeCount ++;
+    }
+    bid_t pop(SuperBlock * sb) {
+        sb->freeCount --;
+        return sb->freeStack[sb->freeCount];
+    }
 public:
+    FBController(VHDController& vhdc, bid_t maxBlockID, bid_t minBlockID):
+        _vhdc(vhdc), _maxBlockID(maxBlockID), _minBlockID(minBlockID) {
+        loadSuperBlock();
+    }
 
-    FBController(VHDController& vhdc, bid_t blockMaxi, size_t blockSize = BLOCK_SIZE):
-            _vhdc(vhdc), _blockSize(blockSize), _blockMaxi(blockMaxi - 1) {}
     bool formatting() {
-        _superBlock.freeMaxi = _blockMaxi;
-        _superBlock.freeHead = 1;
-        _superBlock.dataHead = 0;
-        /* 未优化版本
-        Block block;
-        memset(block.data, 0, sizeof(block.data));
-        for (bid_t i = 2; i < _blockMaxi; ++ i) {
-            block.blockNext = i;
-            _vhdc.writeBlock((char *) & block, i - 1);
-            if (i % 100 == 0) cout << i << " / " << _blockMaxi << endl;
-        }
-        block.blockNext = 0;
-        _vhdc.writeBlock((char *) & block, _blockMaxi - 1);
-        */
-        Block block[FORMAT_BUFFER_SIZE];
-        for (auto &i : block) memset(i.data, 0, BLOCK_CONTENT_SIZE);
-        bid_t div = _blockMaxi / FORMAT_BUFFER_SIZE;
-        bid_t mod = _blockMaxi % FORMAT_BUFFER_SIZE;
-        for (bid_t i = 0; i < div; ++ i) {
-            for (int j = 0; j < FORMAT_BUFFER_SIZE; ++ j)
-                block[j].blockNext = i * FORMAT_BUFFER_SIZE + j + 1;
-            _vhdc.writeBlock((char *) & block[0], i * FORMAT_BUFFER_SIZE, FORMAT_BUFFER_SIZE);
-        }
-        if (mod != 0) {
-            for (int j = 0; j < mod; ++ j)
-                block[j].blockNext = _blockMaxi - mod + j + 1;
-            _vhdc.writeBlock((char *) & block[0], _blockMaxi - mod, static_cast<int>(mod));
-        }
-        block[0].blockNext = 0;
-        _vhdc.writeBlock((char *) & block[0], _blockMaxi - 1);
+        _superBlock = newSuperBlock();
+        push(_superBlock, 0);
+        for (bid_t blockID = _minBlockID + 1; blockID <= _maxBlockID; ++ blockID)
+            recycle(blockID);
         saveSuperBlock();
         return true;
     }
 
     bool loadSuperBlock() { // 加载超级块
-        return _vhdc.readBlock((char *) & _superBlock, 0);
+        return _vhdc.readBlock((char *) & _superBlock, _minBlockID);
     }
 
     bool saveSuperBlock() { // 保存超级块到VHD
-        return _vhdc.writeBlock((char *) & _superBlock, 0);
+        return _vhdc.writeBlock((char *) & _superBlock, _minBlockID);
     }
 
     bool recycle(bid_t blockID) { // 回收blockID指定的块
-        Block block;
-        _vhdc.readBlock((char *) & block, blockID);
-        bid_t sav = _superBlock.freeHead;
-        _superBlock.freeHead = blockID;
-        block.blockNext = sav;
-        _vhdc.writeBlock((char *) & block, blockID);
-        _superBlock.freeMaxi ++;
+        if (_superBlock->freeCount < _BLOCK_GROUP_SIZE) {
+            push(_superBlock, blockID);
+        } else {
+            _vhdc.writeBlock((char *) _superBlock, blockID);
+            delete _superBlock;
+            _superBlock = newSuperBlock();
+            push(_superBlock, blockID);
+        }
         return true;
     }
 
     bool distribute(bid_t & blockID) { // 分配一个空闲块，并将块号放到blockID中，若失败则返回false
-        if (_superBlock.freeMaxi == 0) return false;
-        Block block;
-        blockID = _superBlock.freeHead;
-        _vhdc.readBlock((char *) & block, blockID);
-        _superBlock.freeHead = block.blockNext;
-        _superBlock.freeMaxi --;
+        if (_superBlock->freeCount > 1) {
+            blockID = pop(_superBlock);
+        } else if (_superBlock->freeStack[0] != 0) {
+            blockID = pop(_superBlock);
+            _vhdc.readBlock((char *) _superBlock, blockID);
+        } else return false;
         return true;
     }
 
-    SuperBlock& superBlock() {
+    SuperBlock * superBlock() {
         return _superBlock;
     }
 };
