@@ -1,7 +1,7 @@
-#include "../utilities.h"
-#include <cstdio>
+#include "os.h"
+
 int main(int argc, char * argv[]) {
-    cout << "hello world!" << endl;
+    OS();
     getchar();
     return 0;
 }

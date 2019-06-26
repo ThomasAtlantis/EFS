@@ -4,6 +4,5 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 #set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static -lpthread")
 #set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/VirtualMachine")
 #add_executable(OS OS/main.cpp OS/params.h OS/VHD/disk.cpp OS/VHD/disk.h utilities.h)
-#add_executable(VM VM/bios.h VM/main.cpp)
-add_executable(APP OS/APP/main.cpp OS/APP/CLIController.h utilities.h)
-
+add_executable(VM VM/bios.h VM/main.cpp VM/tiny_efs.h utilities.h)
+add_executable(FormatTool FormatTool/format_tool.h FormatTool/main.cpp VM/tiny_efs.h utilities.h OS/FSC/test.cpp OS/FSC/file_system_controller.h)
