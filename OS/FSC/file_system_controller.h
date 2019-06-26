@@ -12,6 +12,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include "../../VM/tiny_efs.h"
+#include "params.h"
 
 using std::string;
 using std::cout;
@@ -21,39 +23,56 @@ using std::vector;
 
 #define USER_FILE_NAME ./.....
 #define User char[]
-#define FILENAME_MAXLEN 20
+#define FILENAME_MAXLEN 19
 #define MAX_SUB 10
 #define ROOT_BLOCK_NUM 1
 typedef size_t bid_t;
+/*
+ * 问题：
+ * 1. 确定两个数据结构 inode和dir
+ * 2. 如何获取当前的路径/当前的inode
+ *
+ *
+ *
+ *
+ *
+ * */
+
+typedef struct//sizeof(iNode)=
+{
+    time_t ctime;//创建时间-4
+    time_t mtime;//修改时间-4
+    unsigned int size;//文件大小-4
+    unsigned int blocks;//文件所占的块数-4
+    int addr1;//一个一次间址-4
+    int addr2;//一个二次间址-4
+    bid_t bid;//i节点所在的块号-4
+    bid_t blockNum[4];//所指的文件内容的块号-16
+    char name[FILENAME_MAXLEN + 1];//文件名-20
+    char owner[6];//文件所有者-6
+    char group[6];//文件所有组-6
+    char mode;//文件类别或权限-1
+    int parfDir;//父文件夹块号-4
+}iNode;
+typedef struct
+{
+    int index;//块号
+    char name[FILENAME_MAXLEN + 1];//文件名(当前目录)
+    int parfiNode;//父目录节点
+    int subFile[(BLOCK_SIZE-28)/4];//子文件/夹 i节点块号
+}DIRHead;//目录项
+
+void initDIRHead(DIRHead  &dir)//DIRHead 初始化
+{
+    for(int i=0;i<(BLOCK_SIZE-28)/4;i++)
+        dir.subFile[i]=-1;
+}
 
 typedef struct
 {
-    time_t ctime;//创建时间
-    time_t mtime;//修改时间
-    unsigned int size;//文件大小
-    unsigned int blocks;//文件所占的块数
-    int addr1;//一个一次间址
-    int addr2;//一个二次间址
-    bid_t bid;//i节点所在的块号
-    bid_t blockNum;//所指的文件内容的块号
-    char name[FILENAME_MAXLEN + 1];//文件名
-    char owner[6];//文件所有者
-    char group[6];//文件所有组
-    char mode;//文件类别或权限
-    int parfDir;//父文件夹块号
-}iNode;
-
-typedef struct {
-    int index;//块号
-    char name[FILENAME_MAXLEN + 1];//文件名(当前目录)
-    char parfNmae[FILENAME_MAXLEN + 1];//父目录名
-    int subFile[MAX_SUB];//子文件/夹 i节点块号，最多十个
-} DIRHead;
-
-typedef struct {
-    int index;//块号
-    int subFile[MAX_SUB];//子文件/夹 i节点块号，最多十个
-} DIRData;//目录项
+    int index;
+    int subFile[(BLOCK_SIZE-4)/4];
+}DIRData;
 
 
 class FileSystemController
@@ -67,18 +86,29 @@ public:
     {
         user=userName;
     }
-    bool isEmptyDIR(DIR &dir)//判断此文件夹是否为空
+    string getPathNow()//获得当前路径目录
     {
-        for(int i=0;i<MAX_SUB;i++)
+
+    }
+    iNode getPathiNode()//获得当前路径目录i节点
+    {
+
+    }
+    bool isEmptyDIR(DIRHead &dir)//判断此文件夹是否为空
+    {
+        for(int i=0;i<(BLOCK_SIZE-28)/4;i++)
             if(!dir.subFile[i]==-1)
                 return false;
         return true;
     }
-    bool createDIR(DIR &dir,string dirName)
+    bool createDIR(DIRHead &dir,string dirName)
     {
+        initDIRHead(dir);
         dir.name=dirName;
-        //得到当前文件夹路径 pathNow
-        strcpy(dir.parfNmae,pathNow.c_str());
+        //得到当前父文件夹i节点,并修改
+        iNode inode = getPathiNode();
+
+        //strcpy(dir.parfNmae,pathNow.c_str());
         if(_fbc.distribute(dir.index))
         {
             _vhdc.writeBlock((char*) &dir,dir.index);
@@ -86,7 +116,7 @@ public:
 
         //找到父文件夹，写父文件夹的子文件块号
     }
-    bool writeDIR()
+    bool writeDIR(DIRHead &dir,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
     {
 
     }
@@ -116,7 +146,7 @@ public:
 
     bool isExist(string fileName)//判断是否已经存在此文件
     {
-
+        //获取当前文件夹的dir，遍历他的subFile，看是否有文件名
     }
     string openFile(string fileName)//根据文件名打开文件，返回文件的信息标识
     {
@@ -200,25 +230,6 @@ public:
             {
 
             }
-            /*int bid[blockNum];
-            for(int i=0;i<blockNum;i++)//分配块，如果失败将分配的块回收
-            {
-                bool success=true;
-                if(_fbc.distribute(bid[i]))
-                {
-                    string temp=content.substr(i*BLOCK_CONTENT_SIZE,BLOCK_CONTENT_SIZE);//提取子串,从i*BLOCK_CONTENT_SIZE开始,提取BLOCK_CONTENT_SIZE个字节
-                    _vhdc.writeBlock((char*) &temp,bid[i]);
-                }
-                else//分配失败
-                {
-                    for (int j = i-1; j >= 0; j--) {
-                        _fbc.recycle(bid[j]);
-                    }
-                    success=false;
-                }
-                if(!success)
-                    break;
-            }*/
             inode.blockNum=blockNum;
             //写inode
             _vhdc.writeBlock((char*) &inode,inode.bid);
@@ -230,26 +241,6 @@ public:
     iNode openFile(string fileName)//根据文件名返回文件i节点
     {
 
-    }
-    bool amendFile(string fileName)//修改文件，包括文件内容的增添与修改,
-    //假设文件已经打开且具有修改权限
-    {
-        if(isExist(fileName))
-        {
-            iNode inode=openFile(fileName);
-            if(inode.addr1==0)//直接索引
-            {
-                //将文件显示出来并修改，写会磁盘
-            }
-            else if(inode.addr1==1)//一次间址
-            {
-
-            }
-        }
-        else
-        {
-            cout<<"the file is not existed!"<<endl;
-        }
     }
 
     bool deleteFile(string fileName)//删除文件
