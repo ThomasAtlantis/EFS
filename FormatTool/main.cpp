@@ -5,6 +5,8 @@
 #include "format_tool.h"
 
 int main() {
-    FormatTool().format("OS.exe", "data.vhd");
+    FormatTool formatTool("data.vhd");
+    formatTool.compress("OS.exe");
+    formatTool.decompress("OS.iso");
     return 0;
 }

@@ -48,4 +48,11 @@ public:
     }
 };
 
+class BufferTool {
+public:
+    void copy(char * dst, const char * src, size_t length) {
+        for (size_t i = 0; i < length; ++ i) dst[i] = src[i];
+    }
+};
+
 #endif //EFS_UTILITIES_H

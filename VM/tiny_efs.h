@@ -178,15 +178,15 @@ public:
         return _vhdc.writeBlock((char *) & iNode, id);
     }
     // 文件操作
-    bool readFileToBuf(bid_t id, char* buf) { // 读文件到内存缓冲区
+    bool readFileToBuf(bid_t id, char* buf, unsigned int length = static_cast<unsigned int>(-1)) { // 读文件到内存缓冲区
         INode iNode;
         if (!getINodeByID(id, iNode)) return false;
-        if (iNode.blocks * BLOCK_CONTENT_SIZE > sizeof(buf)) return false;
+        if (iNode.blocks * BLOCK_CONTENT_SIZE > length) return false;
         char * p = buf; bid_t blockID = iNode.data;
         Block block;
         for (int i = 0; i < iNode.blocks; ++ i) {
             _vhdc.readBlock((char *) & block, blockID);
-            strncpy(p, block.data, BLOCK_CONTENT_SIZE);
+            BufferTool().copy(p, block.data, BLOCK_CONTENT_SIZE);
             blockID = block.blockNext;
             p += BLOCK_CONTENT_SIZE;
         }
@@ -197,11 +197,13 @@ public:
         if (fileName.length() > FILENAME_MAXLEN ||
             !_fbc.distribute(blockID)) return false;
         iNode.mtime = iNode.atime = time(nullptr);
-        strncpy(iNode.name, fileName.c_str(),
-            std::min(static_cast<size_t>(FILENAME_MAXLEN), fileName.length()));
+        size_t length = std::min(static_cast<size_t>(FILENAME_MAXLEN), fileName.length());
+        BufferTool().copy(iNode.name, fileName.c_str(), length);
+        iNode.name[length] = '\0';
         iNode.bid = blockID;
         iNode.nextINode = _fbc.superBlock().dataHead;
         iNode.prevINode = 0;
+        iNode.data = 0;
         if (iNode.nextINode != 0) {
             INode nextINode;
             _vhdc.readBlock((char *) & nextINode, iNode.nextINode);
@@ -225,14 +227,14 @@ public:
         for (int i = 0; i < iNode.blocks - 1; ++ i) {
             if (!_fbc.distribute(blockID)) return false;
             block.blockNext = blockID;
-            strncpy(block.data, p, BLOCK_CONTENT_SIZE);
+            BufferTool().copy(block.data, p, BLOCK_CONTENT_SIZE);
             p += BLOCK_CONTENT_SIZE;
             _vhdc.writeBlock((char *) & block, preID);
             preID = blockID;
         }
-        strncpy(block.data, p, iNode.bytes);
+        BufferTool().copy(block.data, p, iNode.bytes);
         _vhdc.writeBlock((char *) & block, preID);
-        return true;
+        return saveINodeByID(iNode.bid, iNode);
     }
     bool deleteFile(INode& iNode) {
         INode prevINode, nextINode;
