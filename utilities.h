@@ -10,6 +10,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
 
 using std::string;
 using std::vector;
@@ -21,7 +22,7 @@ using std::cin;
 
 class FileTool {
 public:
-    vector<string> dir(string path = ".", bool recursive = false) {
+    vector<string> dir(string path = ".", bool recursive = false) { //找到对应文件夹下所有文件目录
         vector<string> files;
         intptr_t hFile = 0;
         struct _finddata_t fileInfo{}; //用来存储文件信息的结构体
@@ -45,6 +46,10 @@ public:
     }
     string name(string fileName) {
         return fileName.substr(0, fileName.rfind('.'));
+    }
+    string ext1(string fileName) { //找到对应文件名的文件全称
+        size_t index = fileName.rfind('.');
+        return fileName.substr(0, index);
     }
 };
 
