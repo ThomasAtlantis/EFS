@@ -5,108 +5,138 @@
 #ifndef FS_FILE_SYSTEM_CONTROLLER_H
 #define FS_FILE_SYSTEM_CONTROLLER_H
 
-#include <iostream>
-#include <fstream>
-#include <ctime>
-#include <utility>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include "../../VM/tiny_efs.h"
-#include "params.h"
+#include <adoctint.h>
+#include <utility> #include "../../utilities.h"
+#include "../params.h"
+#include "../FBC/fbc.h"
 
-using std::string;
-using std::cout;
-using std::cin;
-using std::endl;
-using std::vector;
-
-#define USER_FILE_NAME ./.....
-#define FILENAME_MAXLEN 19
-#define MAX_SUB 10
-#define ROOT_BLOCK_NUM 1
-typedef char User[];
-typedef size_t bid_t;
-/*
- * 问题：
- * 1. 确定两个数据结构 inode和dir
- * 2. 如何获取当前的路径/当前的inode
- *
- *
- *
- *
- *
+/* *
+ * 更新：
+ * 1. 部分宏定义放入../params.h
+ * 2. 更新数据结构INode和DirBlock
+ * 3. 我改主意了：
+      string _curUser; // 正在使用系统的用户名
+      INode &_curINode; // 当前目录的i节点
+      这两个的维护应该放到OS类中，FSC的这两个值由参数传入
  * */
 
-typedef struct//sizeof(iNode)=
-{
-    time_t ctime;//创建时间-4
-    time_t mtime;//修改时间-4
-    unsigned int size;//文件大小-4
-    unsigned int blocks;//文件所占的块数-4
-    int addr1;//一个一次间址-4
-    int addr2;//一个二次间址-4
-    bid_t bid;//i节点所在的块号-4
-    bid_t blockNum[4];//所指的文件内容的块号-16
-    char name[FILENAME_MAXLEN + 1];//文件名-20
-    char owner[6];//文件所有者-6
-    char group[6];//文件所有组-6
-    char mode;//文件类别或权限-1
-    int parfDir;//父文件夹块号-4
-}iNode;
-typedef struct
-{
-    int index;//块号
-    char name[FILENAME_MAXLEN + 1];//文件名(当前目录)
-    int parfiNode;//父目录节点
-    int subFile[(BLOCK_SIZE-28)/4];//子文件/夹 i节点块号
-}DIRHead;//目录项
+#define _INODE_PADDING (_BLOCK_SIZE \
+    - sizeof(time_t) * 2 \
+    - sizeof(unsigned int) * 4 \
+    - sizeof(bid_t) * 3 \
+    - _FILENAME_MAXLEN - 1 \
+    - (_USERNAME_MAXLEN - 1) * 2 \
+    - 2)
+#define _DIRBLOCK_ITEM_SIZE ((int)_BLOCK_SIZE / sizeof(bid_t))
+#define _DIRBLOCK_PADDING (_BLOCK_SIZE - _DIRBLOCK_ITEM_SIZE)
 
-void initDIRHead(DIRHead  &dir)//DIRHead 初始化
-{
-    for(int i=0;i<(BLOCK_SIZE-28)/4;i++)
-        dir.subFile[i]=-1;
+// TODO: 完善权限系统
+namespace mode {
+    enum accessMode {
+        read = 4,
+        write = 2,
+        exec = 1,
+        total = 7
+    };
+    // 添加权限：iNode.mode = mode::read| mode::write
 }
 
-typedef struct
-{
-    int index;
-    int subFile[(BLOCK_SIZE-4)/4];
-}DIRData;
-
-
-class FileSystemController
-{
+class FSController {
 private:
-    User user; //用户名
-    FBController &_fbc;
-    VHDController &_vhdc;
-    INode * curINode;
+    #pragma pack(1)
+    typedef struct {
+        time_t ctime; //创建时间
+        time_t mtime; //修改时间
+        unsigned int size; //文件大小
+        unsigned int blocks; //文件所占的块数
+        unsigned int bytes; // size % blocks
+        unsigned int childCount; // 目录文件用来记录文件数
+        bid_t bid; //i节点块号
+        bid_t parentDir; //父文件夹块号
+        bid_t blockNum[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
+        char name [_FILENAME_MAXLEN + 1]; //文件名
+        char owner[_USERNAME_MAXLEN + 1]; //文件所有者
+        char group[_USERNAME_MAXLEN + 1]; //文件所有组
+        char mode; // 文件权限
+        char type; // 文件类型
+        char padding[_INODE_PADDING];
+    } INode;
+
+    typedef struct {
+        bid_t itemList[_DIRBLOCK_ITEM_SIZE]; // 目录表项：下级文件的INode所在块号
+        char padding[_DIRBLOCK_PADDING];
+    } DirBlock;
+    #pragma pack()
+
+    VHDController _vhdc; // 虚拟磁盘管理器
+    FBController _fbc; // 空闲块管理器
+    const bid_t _minBlockID; // 文件系统管理的最小块号
+    const bid_t _maxBlockID; // 文件系统管理的最大块号
+
+    /**
+     * 获取新INode并初始化
+     * @return INode *
+     */
+    INode * newINode() {
+        auto * iNode = new INode;
+        memset(&iNode->ctime, 0, sizeof(INode));
+        return iNode;
+    }
+
+    /**
+     * 获取新DirBlock并初始化
+     * @return DirBlock *
+     */
+    DirBlock * newDirBlock() {
+        auto dirBlock = new DirBlock;
+        for (auto &item: dirBlock->itemList) item = _minBlockID;
+        return dirBlock;
+    }
 public:
-    FileSystemController(User userName)
-    {
-        user=userName;
-        curINode = new INode;
-        curINode->name = "~";
-    }
-    string getPathNow()//获得当前路径目录
-    {
 
-    }
-    iNode getPathiNode()//获得当前路径目录i节点
-    {
+    string partition; // 分区名
 
+    /**
+     * 文件系统构造函数
+     * @param disk 虚拟硬盘文件名
+     * @param minBlockID 管理的最小块号
+     * @param maxBlockID 管理的最大块号
+     * @param part 分区名
+     */
+    FSController(
+        string disk,
+        bid_t minBlockID,
+        bid_t maxBlockID,
+        string part):
+        _vhdc(std::move(disk)),
+        _minBlockID(minBlockID),
+        _maxBlockID(maxBlockID),
+        _fbc(_vhdc, minBlockID, maxBlockID),
+        partition(std::move(part)){}
+    /**
+     * 获取当前路径名
+     * @param curINode
+     * @return 路径名
+     * OS类传入方法：get((_fileSystem_x::INode *) curINode)
+     * 其中curINode是OS维护的void*指针
+     */
+    string workingDir(INode * curINode) {
+        return string(curINode->name);
     }
-    bool isEmptyDIR(DIRHead &dir)//判断此文件夹是否为空
-    {
-        for(int i=0;i<(BLOCK_SIZE-28)/4;i++)
-            if(!dir.subFile[i]==-1)
-                return false;
-        return true;
+
+    /**
+     * 判断目录文件是否为空
+     * @param dirINode 目录文件的i节点
+     * @return 操作成功与否
+     */
+    bool isEmptyDir(INode &dirINode) {
+        return dirINode.childCount == 0;
     }
-    bool createDIR(DIRHead &dir,string dirName)
-    {
-        initDIRHead(dir);
+
+
+    INode * createDir(string dirName) {
+        INode * dirINode = newINode();
+        // TODO: 改到这里了
         dir.name=dirName;
         //得到当前父文件夹i节点,并修改
         iNode inode = getPathiNode();

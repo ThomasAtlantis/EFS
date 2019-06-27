@@ -12,8 +12,6 @@
 #include "..\VHD\vhd.h"
 #include "..\params.h"
 
-#define _BLOCK_GROUP_SIZE 100
-
 #define _SUPBLOCK_PADDING_SIZE (_BLOCK_SIZE - \
     sizeof(bid_t) * (1 + _BLOCK_GROUP_SIZE))
 
