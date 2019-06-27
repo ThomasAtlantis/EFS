@@ -7,6 +7,7 @@
 
 #include <adoctint.h>
 #include <utility> #include "../../utilities.h"
+#include <dbghelp.h>
 #include "../params.h"
 #include "../FBC/fbc.h"
 
@@ -26,20 +27,29 @@
     - sizeof(bid_t) * 3 \
     - _FILENAME_MAXLEN - 1 \
     - (_USERNAME_MAXLEN - 1) * 2 \
-    - 2)
+    - 4)
 #define _DIRBLOCK_ITEM_SIZE ((int)_BLOCK_SIZE / sizeof(bid_t))
 #define _DIRBLOCK_PADDING (_BLOCK_SIZE - _DIRBLOCK_ITEM_SIZE)
+#define _INDEXBLOCK_ITEM_SIZE _DIRBLOCK_ITEM_SIZE
 
-// TODO: 完善权限系统
 namespace mode {
     enum accessMode {
+        none = 0,
         read = 4,
         write = 2,
         exec = 1,
         total = 7
     };
-    // 添加权限：iNode.mode = mode::read| mode::write
 }
+namespace group {
+    enum groupName {
+        user, group, others
+    };
+}
+// demo: iNode.mode[group::user] |= mode::read| mode::write;
+// demo: iNode.mode[group::group] &= ~mode::read;
+// demo: iNode.mode[group::others] = mode::none;
+
 
 class FSController {
 private:
@@ -53,11 +63,11 @@ private:
         unsigned int childCount; // 目录文件用来记录文件数
         bid_t bid; //i节点块号
         bid_t parentDir; //父文件夹块号
-        bid_t blockNum[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
+        bid_t indexList[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
         char name [_FILENAME_MAXLEN + 1]; //文件名
         char owner[_USERNAME_MAXLEN + 1]; //文件所有者
         char group[_USERNAME_MAXLEN + 1]; //文件所有组
-        char mode; // 文件权限
+        char mode[3]; // 文件权限
         char type; // 文件类型
         char padding[_INODE_PADDING];
     } INode;
@@ -65,7 +75,7 @@ private:
     typedef struct {
         bid_t itemList[_DIRBLOCK_ITEM_SIZE]; // 目录表项：下级文件的INode所在块号
         char padding[_DIRBLOCK_PADDING];
-    } DirBlock;
+    } DirBlock, IndexBlock;
     #pragma pack()
 
     VHDController _vhdc; // 虚拟磁盘管理器
@@ -86,12 +96,14 @@ private:
     /**
      * 获取新DirBlock并初始化
      * @return DirBlock *
+     * IndexBlock的获取方法与之完全相同
      */
     DirBlock * newDirBlock() {
         auto dirBlock = new DirBlock;
         for (auto &item: dirBlock->itemList) item = _minBlockID;
         return dirBlock;
     }
+    DirBlock * (*newIndexBlock)() = newDirBlock;
 public:
 
     string partition; // 分区名
@@ -133,6 +145,72 @@ public:
         return dirINode.childCount == 0;
     }
 
+    /**
+     * 获取指定INode的第i个块，使用混合多级索引
+     * @param iNode i节点
+     * @param i 索引表中的块序号
+     * @return 目标块号
+     */
+    // TODO: 测试getBlockID
+    bid_t * getBlockID(INode &iNode, int i) {
+        int _12div = _1INDEX_NUM; // 1/2级索引分界
+        int _23div = _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE; // 2/3级索引分界
+        int listSize = _INDEXBLOCK_ITEM_SIZE;
+        int indexTotal = _23div + _3INDEX_NUM * listSize * listSize;
+        if (i < _12div) return &iNode.indexList[i];
+        else if (i < _23div) {
+            int _2indexIndex = (i - _12div) / listSize;
+            int _2indexOffset = (i - _12div) % listSize;
+            IndexBlock indexBlock;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_12div + _2indexIndex]);
+            return &indexBlock.itemList[_2indexOffset];
+        } else if (i < indexTotal) {
+            int _3indexIndex = (i - _23div) / (listSize * listSize);
+            int _3indexIndexIndex = (i - _23div - _3indexIndex * listSize * listSize) / listSize;
+            int _3indexOffset = (i - _23div - _3indexIndex * listSize * listSize) % listSize;
+            IndexBlock indexBlock;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_23div + _2INDEX_NUM + _3indexIndex]);
+            _vhdc.readBlock((char *) &indexBlock, indexBlock.itemList[_3indexIndexIndex]);
+            return &indexBlock.itemList[_3indexOffset];
+        } else return nullptr;
+    }
+
+    // TODO: 测试push
+    bool push(INode &iNode, bid_t blockID) {
+        bid_t * container = getBlockID(iNode, iNode.blocks);
+        if (!container) return false;
+        *container = blockID;
+        iNode.blocks ++;
+        return true;
+    }
+
+    // TODO: 测试pop
+    bid_t * pop(INode &iNode) {
+        if (iNode.blocks == 0) return nullptr;
+        iNode.blocks --;
+        return getBlockID(iNode, iNode.blocks);
+    }
+
+    /**
+     * 根据文件名获取当前路径下指定文件的i节点
+     * @param curINode 当前目录的i节点
+     * @param fileName 文件名
+     * @return 目标文件i节点
+     */
+    INode * getINode(INode * curINode, string fileName) {
+        DirBlock * dirBlock = newDirBlock();
+        INode * iNode = newINode();
+        for (int i = 0; i < curINode->blocks; ++ i) {
+            _vhdc.readBlock((char *)dirBlock, * getBlockID(*iNode, i));
+            for (const auto &fileINode: dirBlock->itemList) {
+                _vhdc.readBlock((char *)iNode, fileINode);
+                if (string(iNode->name) == fileName) {
+                    return iNode;
+                }
+            }
+        }
+        return nullptr;
+    }
 
     INode * createDir(string dirName) {
         INode * dirINode = newINode();
