@@ -9,7 +9,11 @@
 #include <string>
 #include <iomanip>
 #include <stdlib.h>
+#include <map>
+#include <conio.h>
 #include "../../utilities.h"
+
+#define DEBUG 0
 
 using namespace std;
 class CLIController {
@@ -20,12 +24,16 @@ private:
     string rootDir = "root@USER root";
     string startSymble = "$";
 
+    map<string, string> users;
+
     FileTool fileTool;
     stringTool stringTool1;
 
 public:
     CLIController(){
+        InitUser();
         cout << "--------Welcome!--------" << endl;
+        LoginSystem();
     }
     ~CLIController(){}
 
@@ -37,8 +45,13 @@ public:
     }
 
     bool ReadCommand(){
-        char command[20];
+        char command[40];
+        #if DEBUG
+        strcpy(command, "useradd -c<password> username");
+        #else
+        fflush(stdin);
         gets(command);
+        #endif
         vector<string> vector2 = stringTool1.split(command, " ");//命令行解析
         string pCommand = vector2.at(0);
         int preference = vector2.size()-1;
@@ -77,7 +90,6 @@ public:
                         }
                     }
                 }else{
-                    system("cls");
                     rootDir += "/" + vector2[1];
                 }
             }
@@ -96,7 +108,29 @@ public:
         }else if(pCommand == "mv"){
 
         }else if(pCommand == "userdel"){
-
+            if(preference == 1){
+                map<string, string>::iterator it = users.find(vector2.at(1));
+                if(it == users.end()){
+                    cout << "no user" << endl;
+                }else{
+                    users.erase(vector2.at(1));
+                    cout << "delete successfully" << endl;
+                }
+            }else{
+                cout << "-f：强制删除用户，即使用户当前已登录；" << endl;
+                cout << "-r：删除用户的同时，删除与用户相关的所有文件。" << endl;
+            }
+        }else if(pCommand == "useradd"){
+            string str1 = vector2.at(1);
+            if( ! str1.substr(1, 1).compare("c") ){//useradd -c<password> username
+                string str = vector2.at(1);
+                int index = str.find('<');
+                int index1 = str.find('>');
+                users.insert(pair<string, string>(vector2.at(2), str.substr(index+1, index1-index-1)));
+                cout << "add successfully" << endl;
+            }else{
+                cout << "TODO" << endl;
+            }
         }else if(pCommand == "passwd"){
 
         }else if(pCommand == "su"){
@@ -111,10 +145,12 @@ public:
 
         }else if(pCommand == "exit"){
             exit(0);
+        }else if(pCommand == "clear"){
+            system("cls");
         }else{
-            cout << "command not found" << endl;
+            cout << "not found command" << endl;
         }
-    }
+    };
 
     bool OpenCommandFile(string commond){
         PROCESS_INFORMATION ProcessInfo;
@@ -139,7 +175,61 @@ public:
             MessageBox(NULL,"The process could not be started",NULL,NULL);
     };
 
+    void LoginSystem(){
+        map<string, string> ::iterator it;
+        while(1){
+            string userName;
+            cout << "login: ";
+            #if DEBUG
+            userName = "USER";
+            #else
+            cin >> userName;
+            #endif
+            it = users.find(userName);
+            if(it == users.end()){
+                cout << "no this user" << endl;
+                continue;
+            }
+            break;
+        }
+        while(1){
+            string userPassword;
+            cout << "Password: ";
+            #if DEBUG
+            userPassword = "123456";
+            #else
+            userPassword = GetPasswordWithoutPlainData();
+            #endif
+            if(it->second != userPassword){
+                cout << "your password is error, please input again" << endl;
+                continue;
+            }
+            system("cls");
+            break;
+        }
+    }
+
+    void InitUser(){
+        users.insert(pair<string, string>("USER", "123456"));
+        //cout << "init successfully";
+    }
+
+    string GetPasswordWithoutPlainData()
+    {
+        string ret;
+        char ch;
+        ch = _getch();
+        while (ch != '\n' && ch != '\r')
+        {
+            ret += ch;
+            //cout << "debug:" << ret << endl;
+            ch = _getch();
+        }
+        return ret;
+    }
+
 };
+
 
 
 #endif //EFS_CLICONTROLLER_H
