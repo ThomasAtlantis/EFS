@@ -59,11 +59,11 @@ namespace fio {
 
 class FSController {
 private:
-    VHDController _vhdc; // 虚拟磁盘管理器
-    FBController _fbc; // 空闲块管理器
     const bid_t _minBlockID; // 文件系统管理的最小块号
     const bid_t _maxBlockID; // 文件系统管理的最大块号
 public:
+    VHDController _vhdc; // 虚拟磁盘管理器
+    FBController _fbc; // 空闲块管理器
     string partition; // 分区名
     #pragma pack(1)
     typedef struct {
@@ -185,6 +185,33 @@ public:
 
     // TODO: 测试push
     bool push(INode &iNode, bid_t blockID) {
+        if (iNode.blocks < _1INDEX_NUM) {
+
+        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) {
+            if ((iNode.blocks - _1INDEX_NUM) % _INDEXBLOCK_ITEM_SIZE == 0) {
+                bid_t indexBlockID;
+                if (!_fbc.distribute(indexBlockID)) return false;
+                iNode.indexList[_1INDEX_NUM + (iNode.blocks - _1INDEX_NUM) / _INDEXBLOCK_ITEM_SIZE] = indexBlockID;
+            }
+        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE + _3INDEX_NUM * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) {
+            int index = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) / (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE);
+            if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) % (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) == 0) {
+                bid_t indexBlockID, indexBlockID2;
+                if (!_fbc.distribute(indexBlockID) || !_fbc.distribute(indexBlockID2)) return false;
+                iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index] = indexBlockID;
+                IndexBlock * indexBlock = newDirBlock();
+                indexBlock->itemList[0] = indexBlockID2;
+                _vhdc.writeBlock((char *) indexBlock, indexBlockID);
+            } else if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) % _INDEXBLOCK_ITEM_SIZE == 0) {
+                bid_t indexBlockID;
+                if (!_fbc.distribute(indexBlockID)) return false;
+                IndexBlock indexBlock;
+                _vhdc.readBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
+                int index2 = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) / _INDEXBLOCK_ITEM_SIZE;
+                indexBlock.itemList[index2] = indexBlockID;
+                _vhdc.writeBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
+            }
+        }
         bid_t * container = getBlockID(iNode, iNode.blocks);
         if (!container) return false;
         *container = blockID;
@@ -227,8 +254,10 @@ public:
      */
      // TODO :测试createDir
     INode * createDir(INode * curINode, string curUser, string dirName) {
+        if (dirName.length() > _FILENAME_MAXLEN)
+            return nullptr;
         INode * dirINode = newINode();
-        strcpy(dirINode->name,dirName.c_str());
+        strcpy(dirINode->name, dirName.c_str());
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
         dirINode->blocks = 1;
