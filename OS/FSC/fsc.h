@@ -159,64 +159,113 @@ public:
      * @param i 索引表中的块序号
      * @return 目标块号
      */
-    // TODO: 测试getBlockID
     bid_t * getBlockID(INode &iNode, int i) {
-        int _12div = _1INDEX_NUM; // 1/2级索引分界
-        int _23div = _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE; // 2/3级索引分界
-        int listSize = _INDEXBLOCK_ITEM_SIZE;
-        int indexTotal = _23div + _3INDEX_NUM * listSize * listSize;
-        if (i < _12div) return &iNode.indexList[i];
-        else if (i < _23div) {
-            int _2indexIndex = (i - _12div) / listSize;
-            int _2indexOffset = (i - _12div) % listSize;
-            IndexBlock indexBlock;
-            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_12div + _2indexIndex]);
-            return new bid_t(indexBlock.itemList[_2indexOffset]);
-        } else if (i < indexTotal) {
-            int _3indexIndex = (i - _23div) / (listSize * listSize);
-            int _3indexIndexIndex = (i - _23div - _3indexIndex * listSize * listSize) / listSize;
-            int _3indexOffset = (i - _23div - _3indexIndex * listSize * listSize) % listSize;
-            IndexBlock indexBlock;
-            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_23div + _2INDEX_NUM + _3indexIndex]);
-            _vhdc.readBlock((char *) &indexBlock, indexBlock.itemList[_3indexIndexIndex]);
-            return new bid_t(indexBlock.itemList[_3indexOffset]);
+        const int _1indexNumb = _1INDEX_NUM;
+        const int _2indexNumb = _2INDEX_NUM;
+        const int _3indexNumb = _3INDEX_NUM;
+        const int _2indexSize = _INDEXBLOCK_ITEM_SIZE;
+        const int _3indexSize = _2indexSize * _2indexSize;
+        const int _2_3indexDiv = _1indexNumb + _2indexNumb * _2indexSize;
+        IndexBlock indexBlock;
+        if (i < _1indexNumb) return &iNode.indexList[i];
+        else if (i < _2_3indexDiv) {
+            int index  = (i - _1indexNumb) / _2indexSize;
+            int offset = (i - _1indexNumb) % _2indexSize;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_1indexNumb + index]);
+            return new bid_t(indexBlock.itemList[offset]);
+        } else if (i < _2_3indexDiv + _3indexNumb * _3indexSize) {
+            int index  = (i - _2_3indexDiv) / (_3indexSize);
+            int index2 = (i - _2_3indexDiv - index * _3indexSize) / _2indexSize;
+            int offset = (i - _2_3indexDiv - index * _3indexSize) % _2indexSize;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_1indexNumb + _2indexNumb + index]);
+            _vhdc.readBlock((char *) &indexBlock, indexBlock.itemList[index2]);
+            return new bid_t(indexBlock.itemList[offset]);
         } else return nullptr;
     }
 
-    // TODO: 测试push
-    bool push(INode &iNode, bid_t blockID) {
-        if (iNode.blocks < _1INDEX_NUM) {
+    /**
+     * 设置指定INode的第i个块，使用混合多级索引
+     * @param iNode i节点
+     * @param i 索引表中的块序号
+     * @param blockID 块号
+     * @return 目标块号
+     */
+    bool setBlockID(INode &iNode, int i, bid_t blockID) {
+        const int _1indexNumb = _1INDEX_NUM;
+        const int _2indexNumb = _2INDEX_NUM;
+        const int _3indexNumb = _3INDEX_NUM;
+        const int _2indexSize = _INDEXBLOCK_ITEM_SIZE;
+        const int _3indexSize = _2indexSize * _2indexSize;
+        const int _2_3indexDiv = _1indexNumb + _2indexNumb * _2indexSize;
+        IndexBlock indexBlock;
+        if (i >= _2_3indexDiv + _3indexNumb * _3indexSize) return false;
+        else if (i < _1indexNumb) iNode.indexList[i] = blockID;
+        else if (i < _2_3indexDiv) {
+            int index  = (i - _1indexNumb) / _2indexSize;
+            int offset = (i - _1indexNumb) % _2indexSize;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_1indexNumb + index]);
+            indexBlock.itemList[offset] = blockID;
+            _vhdc.writeBlock((char *) &indexBlock, iNode.indexList[_1indexNumb + index]);
+        } else {
+            int index  = (i - _2_3indexDiv) / (_3indexSize);
+            int index2 = (i - _2_3indexDiv - index * _3indexSize) / _2indexSize;
+            int offset = (i - _2_3indexDiv - index * _3indexSize) % _2indexSize;
+            _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_1indexNumb + _2indexNumb + index]);
+            bid_t indexSav = indexBlock.itemList[index2];
+            _vhdc.readBlock((char *) &indexBlock, indexSav);
+            indexBlock.itemList[offset] = blockID;
+            _vhdc.writeBlock((char *) &indexBlock, indexSav);
+        }
+        return true;
+    }
 
-        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) {
-            if ((iNode.blocks - _1INDEX_NUM) % _INDEXBLOCK_ITEM_SIZE == 0) {
-                bid_t indexBlockID;
-                if (!_fbc.distribute(indexBlockID)) return false;
-                iNode.indexList[_1INDEX_NUM + (iNode.blocks - _1INDEX_NUM) / _INDEXBLOCK_ITEM_SIZE] = indexBlockID;
-            }
-        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE + _3INDEX_NUM * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) {
-            int index = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) / (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE);
-            if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) % (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) == 0) {
-                bid_t indexBlockID, indexBlockID2;
-                if (!_fbc.distribute(indexBlockID) || !_fbc.distribute(indexBlockID2)) return false;
-                iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index] = indexBlockID;
+    /**
+     * i节点索引表进栈
+     * @param iNode i节点
+     * @param blockID 放入栈的块号
+     * @return 操作成功与否
+     */
+    bool push(INode &iNode, bid_t blockID) {
+        const int _1indexNumb = _1INDEX_NUM;
+        const int _2indexNumb = _2INDEX_NUM;
+        const int _3indexNumb = _3INDEX_NUM;
+        const int _2indexSize = _INDEXBLOCK_ITEM_SIZE;
+        const int _3indexSize = _2indexSize * _2indexSize;
+        const int _2_3indexDiv = _1indexNumb + _2indexNumb * _2indexSize;
+        bid_t indexBlockID;
+        if (iNode.blocks >= _1indexNumb) { // 栈顶指针超出直接索引区
+            if (iNode.blocks < _2_3indexDiv) {
+                int index  = (iNode.blocks - _1indexNumb) / _2indexSize;
+                int offset = (iNode.blocks - _1indexNumb) % _2indexSize;
+                if (offset == 0) {
+                    if (!_fbc.distribute(indexBlockID)) return false;
+                    iNode.indexList[_1indexNumb + index] = indexBlockID;
+                }
+            } else if (iNode.blocks < _2_3indexDiv + _3indexNumb * _3indexSize) {
+                int index  = (iNode.blocks - _2_3indexDiv) / _3indexSize;
+                int offset = (iNode.blocks - _2_3indexDiv) % _3indexSize;
+                int index2 = (iNode.blocks - _2_3indexDiv - index * _3indexSize) / _2indexSize;
+                int offset2= (iNode.blocks - _2_3indexDiv - index * _3indexSize) % _2indexSize;
                 IndexBlock * indexBlock = newDirBlock();
-                indexBlock->itemList[0] = indexBlockID2;
-                _vhdc.writeBlock((char *) indexBlock, indexBlockID);
-            } else if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) % _INDEXBLOCK_ITEM_SIZE == 0) {
-                bid_t indexBlockID;
-                if (!_fbc.distribute(indexBlockID)) return false;
-                IndexBlock indexBlock;
-                _vhdc.readBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
-                int index2 = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) / _INDEXBLOCK_ITEM_SIZE;
-                indexBlock.itemList[index2] = indexBlockID;
-                _vhdc.writeBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
+                bid_t & indexBlockID2 = iNode.indexList[_1indexNumb + _2indexNumb + index];
+                if (offset == 0) {
+                    if (!_fbc.distribute(indexBlockID)) return false;
+                    indexBlock->itemList[0] = indexBlockID;
+                    if (!_fbc.distribute(indexBlockID)) return false;
+                    _vhdc.writeBlock((char *) indexBlock, indexBlockID);
+                    indexBlockID2 = indexBlockID;
+                } else if (offset2 == 0) {
+                    if (!_fbc.distribute(indexBlockID)) return false;
+                    _vhdc.readBlock((char *) indexBlock, indexBlockID2);
+                    indexBlock->itemList[index2] = indexBlockID;
+                    _vhdc.writeBlock((char *) indexBlock, indexBlockID2);
+                }
             }
         }
-        bid_t * container = getBlockID(iNode, iNode.blocks);
-        if (!container) return false;
-        *container = blockID;
-        iNode.blocks ++;
-        return true;
+        if (setBlockID(iNode, iNode.blocks, blockID)) {
+            iNode.blocks ++;
+            return true;
+        } else return false;
     }
 
     // TODO: 测试pop
@@ -282,7 +331,7 @@ public:
             std::cout<<"distribute unsuccessfully"<<endl;
             return nullptr;
         }
-        dirINode->parentDir = curINode.bid;
+        dirINode->parentDir = curINode->bid;
         addDirChild(*curINode, *dirINode);
         bid_t num;
         _fbc.distribute(num);
@@ -303,10 +352,12 @@ public:
     {
         if(dirName!="")
             strcpy(dirINode.name,dirName.c_str());
+            strcpy(dirINode.name, dirName.c_str());
         if(curUser!="")
             strcpy(dirINode.owner,curUser.c_str());
         dirINode.mtime=time(nullptr);
         //需要将I节点写到磁盘吗？？？
+        return true;
     }
 
 
@@ -386,9 +437,9 @@ public:
                 }
             }
             int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
-            bid_t * blockID = pop(file);
+//            bid_t * blockID = pop(file);
             DirBlock * dirBlock = newDirBlock();
-            _vhdc.readBlock((char *) dirBlock,*blockID);
+//            _vhdc.readBlock((char *) dirBlock,blockID);
             for(int i=0;i<offset;i++)
             {
                 INode * iNode = newINode();
