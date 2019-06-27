@@ -59,11 +59,11 @@ namespace fio {
 
 class FSController {
 private:
-    VHDController _vhdc; // 虚拟磁盘管理器
-    FBController _fbc; // 空闲块管理器
     const bid_t _minBlockID; // 文件系统管理的最小块号
     const bid_t _maxBlockID; // 文件系统管理的最大块号
 public:
+    VHDController _vhdc; // 虚拟磁盘管理器
+    FBController _fbc; // 空闲块管理器
     string partition; // 分区名
     #pragma pack(1)
     typedef struct {
@@ -185,6 +185,33 @@ public:
 
     // TODO: 测试push
     bool push(INode &iNode, bid_t blockID) {
+        if (iNode.blocks < _1INDEX_NUM) {
+
+        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) {
+            if ((iNode.blocks - _1INDEX_NUM) % _INDEXBLOCK_ITEM_SIZE == 0) {
+                bid_t indexBlockID;
+                if (!_fbc.distribute(indexBlockID)) return false;
+                iNode.indexList[_1INDEX_NUM + (iNode.blocks - _1INDEX_NUM) / _INDEXBLOCK_ITEM_SIZE] = indexBlockID;
+            }
+        } else if (iNode.blocks < _1INDEX_NUM + _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE + _3INDEX_NUM * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) {
+            int index = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) / (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE);
+            if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE) % (_INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) == 0) {
+                bid_t indexBlockID, indexBlockID2;
+                if (!_fbc.distribute(indexBlockID) || !_fbc.distribute(indexBlockID2)) return false;
+                iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index] = indexBlockID;
+                IndexBlock * indexBlock = newDirBlock();
+                indexBlock->itemList[0] = indexBlockID2;
+                _vhdc.writeBlock((char *) indexBlock, indexBlockID);
+            } else if ((iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) % _INDEXBLOCK_ITEM_SIZE == 0) {
+                bid_t indexBlockID;
+                if (!_fbc.distribute(indexBlockID)) return false;
+                IndexBlock indexBlock;
+                _vhdc.readBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
+                int index2 = (iNode.blocks - _1INDEX_NUM - _2INDEX_NUM * _INDEXBLOCK_ITEM_SIZE - index * _INDEXBLOCK_ITEM_SIZE * _INDEXBLOCK_ITEM_SIZE) / _INDEXBLOCK_ITEM_SIZE;
+                indexBlock.itemList[index2] = indexBlockID;
+                _vhdc.writeBlock((char *) & indexBlock, iNode.indexList[_1INDEX_NUM + _2INDEX_NUM + index]);
+            }
+        }
         bid_t * container = getBlockID(iNode, iNode.blocks);
         if (!container) return false;
         *container = blockID;
@@ -226,9 +253,10 @@ public:
      *@return 新建文件夹的INode
      */
     INode * createDir(INode * curINode, string curUser, string dirName) {
+        if (dirName.length() > _FILENAME_MAXLEN)
+            return nullptr;
         INode * dirINode = newINode();
-        // TODO: 改到这里了
-        dirINode->name = dirName;
+        strcpy(dirINode->name, dirName.c_str());
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
         dirINode->blocks = 1;
@@ -236,24 +264,25 @@ public:
         dirINode->childCount = 0;
         if(!_fbc.distribute(dirINode->bid))
             std::cout<<"distribute unsuccessfully"<<endl;
-        dirINode->parentDir = curINode.bid;
+        dirINode->parentDir = curINode->bid;
         INode parentINode {};
-        _vhd.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
+        _vhdc.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
         DirBlock parentDirBlock{};
-        _vhd.readBlock((char *) &parentDirBlock, parentINode->indexList[0]);//找到父文件夹，写父文件夹的子文件块号
+        _vhdc.readBlock((char *) &parentDirBlock, parentINode.indexList[0]);//找到父文件夹，写父文件夹的子文件块号
         parentDirBlock.itemList[parentINode.childCount++]=dirINode->bid;
-        _vhd.writeBlock((char *) &dirBlock, dirINode->indexList[0]);
+        _vhdc.writeBlock((char *) dirINode, dirINode->indexList[0]);
         DirBlock * dirBlock = newDirBlock();//文件夹的目录表项，也就是文件夹i节点的内容
         _fbc.distribute(dirINode->indexList[0]);
-        _vhd.writeBlock((char *) &parentDirBlock, parentINode->indexList[0]);
-        push(dirINode,dirINode->bid);
+        _vhdc.writeBlock((char *) &parentDirBlock, parentINode.indexList[0]);
+        push(*dirINode, dirINode->bid);
         return dirINode;
     }
     bool writeDir(INode &dirINode,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
     {
         if(dirName!="")
-            dirINode.name=dirName;
+            strcpy(dirINode.name, dirName.c_str());
         dirINode.mtime=time(nullptr);
+        return true;
     }
 
     bool addDirChild(INode &dirINode, INode &child) {
