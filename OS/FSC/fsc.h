@@ -580,6 +580,8 @@ public:
         iNode=getINode(curINode,fileName);
         //读出文件节点和文件内容，并将他们写到新文件夹的新建的空闲块中
 
+
+
         
         addDirChild(*newPath,)
 
