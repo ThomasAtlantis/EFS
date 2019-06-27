@@ -252,6 +252,7 @@ public:
      * @param dirName 新建的文件夹名字
      *@return 新建文件夹的INode
      */
+     // TODO :测试createDir
     INode * createDir(INode * curINode, string curUser, string dirName) {
         if (dirName.length() > _FILENAME_MAXLEN)
             return nullptr;
@@ -260,73 +261,218 @@ public:
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
         dirINode->blocks = 1;
-        dirINode->type = 'd';//目录文件
+        dirINode->type = 'D';//目录文件
         dirINode->childCount = 0;
+        BufferTool().copy(dirINode->mode, curINode->mode, 3);
+        strcpy(dirINode->owner,curUser.c_str());
         if(!_fbc.distribute(dirINode->bid))
+        {
             std::cout<<"distribute unsuccessfully"<<endl;
-        dirINode->parentDir = curINode->bid;
-        INode parentINode {};
-        _vhdc.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
-        DirBlock parentDirBlock{};
-        _vhdc.readBlock((char *) &parentDirBlock, parentINode.indexList[0]);//找到父文件夹，写父文件夹的子文件块号
-        parentDirBlock.itemList[parentINode.childCount++]=dirINode->bid;
-        _vhdc.writeBlock((char *) dirINode, dirINode->indexList[0]);
-        DirBlock * dirBlock = newDirBlock();//文件夹的目录表项，也就是文件夹i节点的内容
-        _fbc.distribute(dirINode->indexList[0]);
-        _vhdc.writeBlock((char *) &parentDirBlock, parentINode.indexList[0]);
-        push(*dirINode, dirINode->bid);
+            return nullptr;
+        }
+        dirINode->parentDir = curINode.bid;
+        addDirChild(*curINode, *dirINode);
+        bid_t num;
+        _fbc.distribute(num);
+        push(*dirINode,num);
+        DirBlock * dirBlock = newDirBlock();
+        _vhdc.writeBlock((char *) dirBlock ,num);
+        _vhdc.writeBlock((char *) dirINode,dirINode->bid);
         return dirINode;
     }
-    bool writeDir(INode &dirINode,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
+
+
+    /**
+     *
+     * 改文件名字或者所有者
+     * @param dirINode
+     * @param dirName
+     * @return
+     */
+    bool writeDir(INode &dirINode,string dirName="",string  curUser="" )//修改dir信息，如文件夹名字或者子文件变更时用到
     {
         if(dirName!="")
-            strcpy(dirINode.name, dirName.c_str());
+            dirINode.name=dirName;
+        if(curUser!="")
+            strcpy(dirINode.owner,curUser.c_str());
         dirINode.mtime=time(nullptr);
-        return true;
+        //需要将I节点写到磁盘吗？？？
     }
 
+
     bool addDirChild(INode &dirINode, INode &child) {
+        DirBlock * dirBlock = newDirBlock();
+        int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
+        int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
+        bid_t * blockID = getBlockID(dirINode, index);
+        if (!blockID) {
+            if (!_fbc.distribute(* blockID))
+                return false;
+            push(dirINode, * blockID);
+        } else {
+            _vhdc.readBlock((char *) dirBlock, * blockID);
+        }
+        dirBlock->itemList[offset]=child.bid;
+        dirINode.childCount ++;
+        _vhdc.writeBlock((char *) dirBlock, * blockID);
         return true;
     }
+    /**
+     *
+     * 没写完  写不下去了
+     * 此函数没有考虑文件夹具有多个块的子文件I节点
+     * @param dirINode
+     * @param child
+     * @return
+     */
     bool removeDirChild(INode &dirINode, INode &child) {
+        DirBlock * dirBlock = newDirBlock();
+        int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
+        int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
+        bid_t * blockID = getBlockID(dirINode, index);
+        _vhdc.writeBlock((char *) dirBlock, * blockID);
+        for(int i=0;i<offset;i++)
+        {
+            if(dirBlock->itemList[i]==child.bid)
+            {
+                for(int j=i;)
+            }
+        }
+
+        /*DirBlock * dirBlock = newDirBlock();
+        int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
+        int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
+        bid_t * blockID = getBlockID(dirINode, index);
+        if(offset==0&&index>0)//最后一块的一个
+        {
+            pop(dirINode);
+        }else{
+
+        }*/
+       /* if (!blockID) {
+            if (!_fbc.distribute(* blockID))
+                return false;
+            dirINode.blocks++;
+            push(dirINode, * blockID);
+        } else {
+            _vhdc.readBlock((char *) dirBlock, * blockID);
+        }
+        dirBlock->itemList[offset]=child.bid;
+        dirINode.childCount --;
+        _vhdc.writeBlock((char *) dirBlock, * blockID);*/
+        /*DirBlock * parentDirBlock = newDirBlock();
+        _vhdc.readBlock((char *) &parentDirBlock,parentINode.indexList[0]);
+        for(int i=0;i<parentINode.childCount;i++)
+            if(parentDirBlock.itemList[i]==file.bid)//在父节点删除此文件的I节点块号
+            {
+                for(int j=i;j<parentINode.childCount-1;j++)
+                    parentDirBlock.itemList[j]=parentDirBlock.itemList[j+1];
+                break;
+            }
+        parentINode.childCount--;*/
         return true;
     }
+/**
+ * 返回文件夹的子文件i节点vector
+ * @param dirINode
+ * @return
+ */
+ // TODO
     vector<INode *> listDir(INode &dirINode) {
-        return {};
+        vector <INode *> result;
+        if(dirINode.type=='F')//文件
+        {
+
+        }
+        else if(dirINode.type=='D'&&isEmptyDir(dirINode))//空文件夹
+        {
+
+        }
+        else//正常含有子文件的文件夹
+        {
+            for(int i=0;i<dirINode.blocks-1;i++)
+            {
+                bid_t * blockID;
+                blockID = getBlockID(dirINode, i) ;
+                DirBlock * dirBlock = newDirBlock();
+                _vhdc.readBlock((char *) dirBlock,*blockID);
+                for(int j=0;j<_DIRBLOCK_ITEM_SIZE;j++)
+                {
+                    INode * iNode = newINode();
+                    _vhdc.readBlock((char *) iNode,dirBlock->itemList[j]);
+                    result.push_back(iNode);
+                }
+            }
+            int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
+            bid_t * blockID = pop(file);
+            DirBlock * dirBlock = newDirBlock();
+            _vhdc.readBlock((char *) dirBlock,*blockID);
+            for(int i=0;i<offset;i++)
+            {
+                INode * iNode = newINode();
+                _vhdc.readBlock((char *) iNode,dirBlock->itemList[i]);
+                result.push_back(iNode);
+            }
+        }
+        return result;
     }
+
+
     bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
-        if(isEmptyDir(file))
+        if(file.type=='D'&&isEmptyDir(file))//空的文件夹
         {
             //找到父节点删除此节点信息
             //删除此节点
-            INode parentINode {};
-            _vhdc.readBlock((char *) &parentINode,file.parentDir);
-            DirBlock parentDirBlock{};
-            _vhdc.readBlock((char *) &parentDirBlock,parentINode.indexList[0]);
-            for(int i=0;i<parentINode.childCount;i++)
-                if(parentDirBlock.itemList[i]==file.bid)//在父节点删除此文件的I节点块号
-                {
-                    for(int j=i;j<parentINode.childCount-1;j++)
-                        parentDirBlock.itemList[j]=parentDirBlock.itemList[j+1];
-                    break;
-                }
-            parentINode.childCount--;
-
-            //回收所有的文件块
-
-            //回收此文件I节点
+            INode * parentINode = newINode();
+            _vhdc.readBlock((char *) parentINode,file.parentDir);
+            removeDirChild(*parentINode,file);
+            bid_t * blockID = pop(file);
+            _fbc.recycle(* blockID);//回收此节点块和此文件块
             _fbc.recycle(file.bid);
         }
-        else
+        else if(file.type=='D')//非空文件夹
         {
             // 递归删除此文件夹下的所有子文件
-//            _vhdc.readBlock();
-//            for(int i=0;i<file.childCount;i++)
-//                removeFile();
+            for(int i=0;i<file.blocks-1;i++)
+            {
+                bid_t * blockID;
+                blockID = pop(file);
+                DirBlock * dirBlock = newDirBlock();
+                _vhdc.readBlock((char *) dirBlock,*blockID);
+                for(int j=0;j<_DIRBLOCK_ITEM_SIZE;j++)
+                {
+                    INode * dirINode = newINode();
+                    _vhdc.readBlock((char *) dirBlock,dirBlock->itemList[j]);
+                    removeFile(*dirINode);
+                }
+            }
+            int offset = file.childCount % _DIRBLOCK_ITEM_SIZE;
+            bid_t * blockID = pop(file);
+            DirBlock * dirBlock = newDirBlock();
+            _vhdc.readBlock((char *) dirBlock,*blockID);
+            for(int i=0;i<offset;i++)
+            {
+                INode * dirINode = newINode();
+                _vhdc.readBlock((char *) dirBlock,dirBlock->itemList[j]);
+                removeFile(*dirINode);
+            }
+        }
+        else if(file.type=='F')//普通文件
+        {
+            INode * parentINode = newINode();
+            _vhdc.readBlock((char *) parentINode,file.parentDir);
+            removeDirChild(*parentINode,file);
+            for(int i=0;i<file.blocks;i++)
+            {
+                bid_t * blockID = pop(file);
+                _fbc.recycle(* blockID);//回收此节点块和此文件块
+            }
+            _fbc.recycle(file.bid);
         }
         return true;
-
     }
+
+
     bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
         //判断用户是否具有权限
 
