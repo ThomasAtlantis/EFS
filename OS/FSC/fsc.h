@@ -74,7 +74,7 @@ public:
         unsigned int bytes; // 最后一块字节数，size % blocks
         unsigned int childCount; // 目录文件用来记录文件数？？？？数组？？？
         bid_t bid; //i节点块号
-        bid_t parentDir; //父文件夹块号
+        bid_t parentDir; //父文件夹I节点块号
         bid_t indexList[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
         char name [_FILENAME_MAXLEN + 1]; //文件名
         char owner[_USERNAME_MAXLEN + 1]; //文件所有者
@@ -220,27 +220,40 @@ public:
         return nullptr;
     }
 
+    /**在当前文件夹下创建子文件夹
+     *@param curINode 当前目录
+     * @param dirName 新建的文件夹名字
+     *@return 新建文件夹的INode
+     */
     INode * createDir(INode * curINode, string curUser, string dirName) {
-        if (dirName.length() > _FILENAME_MAXLEN)
-            return nullptr;
         INode * dirINode = newINode();
-        strcpy(dirINode->name, dirName.c_str());
+        // TODO: 改到这里了
+        dirINode->name = dirName;
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
-        dirINode->type = 'd';
-
+        dirINode->blocks = 1;
+        dirINode->type = 'd';//目录文件
+        dirINode->childCount = 0;
         if(!_fbc.distribute(dirINode->bid))
             std::cout<<"distribute unsuccessfully"<<endl;
-        dirINode->parentDir = curINode->bid;
+        dirINode->parentDir = curINode.bid;
         INode parentINode {};
-        _vhdc.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
-
+        _vhd.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
+        DirBlock parentDirBlock{};
+        _vhd.readBlock((char *) &parentDirBlock, parentINode->indexList[0]);//找到父文件夹，写父文件夹的子文件块号
+        parentDirBlock.itemList[parentINode.childCount++]=dirINode->bid;
+        _vhd.writeBlock((char *) &dirBlock, dirINode->indexList[0]);
         DirBlock * dirBlock = newDirBlock();//文件夹的目录表项，也就是文件夹i节点的内容
         _fbc.distribute(dirINode->indexList[0]);
-        _vhdc.writeBlock((char *) &dirBlock, dirINode->indexList[0]);
+        _vhd.writeBlock((char *) &parentDirBlock, parentINode->indexList[0]);
+        push(dirINode,dirINode->bid);
+        return dirINode;
     }
-    bool renameDir(INode &dirINode) {
-        return true;
+    bool writeDir(INode &dirINode,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
+    {
+        if(dirName!="")
+            dirINode.name=dirName;
+        dirINode.mtime=time(nullptr);
     }
 
     bool addDirChild(INode &dirINode, INode &child) {
@@ -294,6 +307,7 @@ public:
     FilePointer openFile(INode * curINode, string fileName) { //根据文件名打开文件
         cout<<"in openFile()"<<endl;
         DirBlock parentDirBlock{};//读父文件夹的子文件I节点块
+
         _vhdc.readBlock((char *) &curINode, curINode->indexList[0]);
 
         for(int i=0;i<curINode->childCount;i++)
@@ -344,22 +358,22 @@ public:
             {
                 inode.addr1=0;
                 inode.addr2=0;
-                if(_fbc.distribute(inode.blockNum))
+                if(_fbc.distribute(inode.indexList))
                 {
                     _vhdc.writeBlock((char*) &content,bid[i]);
                 }
                 else
                 {
-                    _fbc.recycle(inode.blockNum);
+                    _fbc.recycle(inode.indexList);
                     return false;
                 }
             }
-            else if(blockNum<=BLOCK_CONTENT_SIZE/4)//一次间址
+            else if(indexList<=BLOCK_CONTENT_SIZE/4)//一次间址
             {
-                int bid[blockNum];
+                int bid[indexList];
                 inode.addr1=1;
                 inode.addr2=0;
-                for(int i=0;i<blockNum;i++)//分配块，如果失败将分配的块回收
+                for(int i=0;i<indexList;i++)//分配块，如果失败将分配的块回收
                 {
                     bool success=true;
                     if(_fbc.distribute(bid[i]))
@@ -378,11 +392,11 @@ public:
                         break;
                 }
             }
-            else if(blockNum<=(BLOCK_CONTENT_SIZE/4)*(BLOCK_CONTENT_SIZE/4))//二次间址
+            else if(indexList<=(BLOCK_CONTENT_SIZE/4)*(BLOCK_CONTENT_SIZE/4))//二次间址
             {
 
             }
-            inode.blockNum=blockNum;
+            inode.indexList=indexList;
             //写inode
             _vhdc.writeBlock((char*) &inode,inode.bid);
             cout<<"the file is be created successfully."<<endl;
