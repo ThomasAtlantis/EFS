@@ -12,98 +12,151 @@
 #include "..\VHD\vhd.h"
 #include "..\params.h"
 
-#define BLOCK_CONTENT_SIZE (BLOCK_SIZE \
-    - sizeof(bid_t))
-#define SUPBLOCK_PADDING_SIZE (BLOCK_SIZE \
-    - sizeof(bid_t) * 3)
-#pragma pack (1)
-typedef struct {
-    bid_t freeMaxi; // 空闲块总数量
-    bid_t freeHead; // 第一个空闲块
-    bid_t dataHead; // 第一个数据块
-    char padding[SUPBLOCK_PADDING_SIZE];
-} SuperBlock;
-typedef struct {
-    bid_t blockNext;
-    char data[BLOCK_CONTENT_SIZE];
-} Block;
-#pragma pack ()
+#define _SUPBLOCK_PADDING_SIZE (_BLOCK_SIZE - \
+    sizeof(bid_t) * (1 + _BLOCK_GROUP_SIZE))
 
-class FBController { // 使用隐式链接分配
+class FBController { // 使用成组链接法管理空闲块
 private:
-    const size_t _blockSize; // 外存块大小
-    const bid_t _blockMaxi; // 外存块总数量
-    SuperBlock _superBlock; // 内存超级块缓冲区
+    // 超级块的结构定义
+    #pragma pack (1)
+    typedef struct {
+        bid_t freeCount; // 空闲块总数量
+        bid_t freeStack[_BLOCK_GROUP_SIZE]; // 空闲块栈
+        char padding[_SUPBLOCK_PADDING_SIZE];
+    } SuperBlock;
+    #pragma pack ()
+
+    const bid_t _maxBlockID; // 受管理的最大块号
+    const bid_t _minBlockID; // 受管理的最小块号
+    SuperBlock * _superBlock; // 内存超级块缓冲区
     VHDController& _vhdc; // 通过引用vhdc调用VHD接口
+
+    /**
+     * 获取新块并初始化
+     * @return 新块的指针
+     */
+    char * newBlock() {
+        auto * block = new char [_BLOCK_SIZE];
+        memset(block, 0, _BLOCK_SIZE); // 清0
+        return block;
+    }
+
+    /**
+     * 获取新超级块并初始化
+     * @return 超级块指针
+     */
+    SuperBlock * newSuperBlock() {
+        auto * sb = new SuperBlock;
+        sb->freeCount = 0; // 栈顶指针归0
+        for (auto & freeBlockID: sb->freeStack) // 栈内数据清0
+            freeBlockID = 0;
+        memset(sb->padding, 0, _SUPBLOCK_PADDING_SIZE);
+        return sb;
+    }
+
+    /**
+     * 空闲块栈压栈
+     * @param sb 超级块
+     * @param blockID 空闲块号
+     */
+    void push(SuperBlock * sb, bid_t blockID) {
+        sb->freeStack[sb->freeCount] = blockID;
+        sb->freeCount ++;
+    }
+
+    /**
+     * 空闲块栈弹栈
+     * @param sb 超级块
+     * @return 空闲块号
+     */
+    bid_t pop(SuperBlock * sb) {
+        sb->freeCount --;
+        return sb->freeStack[sb->freeCount];
+    }
 public:
+    /**
+     * 构造函数，尝试从硬盘读取超级块
+     * @param vhdc 虚拟硬盘管理器
+     * @param minBlockID 管理的最小块号
+     * @param maxBlockID 管理的最大块号
+     */
+    FBController(VHDController& vhdc,
+        bid_t minBlockID,
+        bid_t maxBlockID):
+        _vhdc(vhdc),
+        _minBlockID(minBlockID),
+        _maxBlockID(maxBlockID) {
+        _superBlock = newSuperBlock();
+        loadSuperBlock();
+    }
 
-    FBController(VHDController& vhdc, bid_t blockMaxi, size_t blockSize = BLOCK_SIZE):
-            _vhdc(vhdc), _blockSize(blockSize), _blockMaxi(blockMaxi - 1) {}
+    /**
+     * 格式化硬盘
+     * @return 操作成功与否
+     */
     bool formatting() {
-        _superBlock.freeMaxi = _blockMaxi;
-        _superBlock.freeHead = 1;
-        _superBlock.dataHead = 0;
-        /* 未优化版本
-        Block block;
-        memset(block.data, 0, sizeof(block.data));
-        for (bid_t i = 2; i < _blockMaxi; ++ i) {
-            block.blockNext = i;
-            _vhdc.writeBlock((char *) & block, i - 1);
-            if (i % 100 == 0) cout << i << " / " << _blockMaxi << endl;
-        }
-        block.blockNext = 0;
-        _vhdc.writeBlock((char *) & block, _blockMaxi - 1);
-        */
-        Block block[FORMAT_BUFFER_SIZE];
-        for (auto &i : block) memset(i.data, 0, BLOCK_CONTENT_SIZE);
-        bid_t div = _blockMaxi / FORMAT_BUFFER_SIZE;
-        bid_t mod = _blockMaxi % FORMAT_BUFFER_SIZE;
-        for (bid_t i = 0; i < div; ++ i) {
-            for (int j = 0; j < FORMAT_BUFFER_SIZE; ++ j)
-                block[j].blockNext = i * FORMAT_BUFFER_SIZE + j + 1;
-            _vhdc.writeBlock((char *) & block[0], i * FORMAT_BUFFER_SIZE, FORMAT_BUFFER_SIZE);
-        }
-        if (mod != 0) {
-            for (int j = 0; j < mod; ++ j)
-                block[j].blockNext = _blockMaxi - mod + j + 1;
-            _vhdc.writeBlock((char *) & block[0], _blockMaxi - mod, static_cast<int>(mod));
-        }
-        block[0].blockNext = 0;
-        _vhdc.writeBlock((char *) & block[0], _blockMaxi - 1);
-        saveSuperBlock();
+        delete _superBlock;
+        _superBlock = newSuperBlock();
+        push(_superBlock, _minBlockID); // 保留最小块号作尾结束指针，同时也是储存超级块的位置
+        for (bid_t blockID = _minBlockID + 1; blockID <= _maxBlockID; ++ blockID)
+            recycle(blockID); // 依次回收剩下的所有块
+        saveSuperBlock(); // 只要超级块有变化，刷到硬盘
         return true;
     }
 
-    bool loadSuperBlock() { // 加载超级块
-        return _vhdc.readBlock((char *) & _superBlock, 0);
+    /**
+     * 加载超级块
+     * @return 操作成功与否
+     */
+    bool loadSuperBlock() {
+        return _vhdc.readBlock((char *) _superBlock, _minBlockID); // 超级块存在最小块号处
     }
 
-    bool saveSuperBlock() { // 保存超级块到VHD
-        return _vhdc.writeBlock((char *) & _superBlock, 0);
+    /**
+     * 保存超级块到VHD
+     * @return 操作成功与否
+     */
+    bool saveSuperBlock() {
+        return _vhdc.writeBlock((char *) _superBlock, _minBlockID); // 超级块存在最小块号处
     }
 
-    bool recycle(bid_t blockID) { // 回收blockID指定的块
-        Block block;
-        _vhdc.readBlock((char *) & block, blockID);
-        bid_t sav = _superBlock.freeHead;
-        _superBlock.freeHead = blockID;
-        block.blockNext = sav;
-        _vhdc.writeBlock((char *) & block, blockID);
-        _superBlock.freeMaxi ++;
+    /**
+     * 回收blockID指定的块
+     * @param blockID 待回收的块号
+     * @return 操作成功与否
+     */
+    bool recycle(bid_t blockID) {
+        if (_superBlock->freeCount < _BLOCK_GROUP_SIZE) { // 如果栈未满
+            push(_superBlock, blockID); // 压栈
+        } else { // 如果栈满
+            _vhdc.writeBlock((char *) _superBlock, blockID); // 超级块写入空闲块，成为下级组长块
+            delete _superBlock; // 删除超级块，重新初始化为空
+            _superBlock = newSuperBlock();
+            push(_superBlock, blockID); // 将下级组长块压栈
+        }
         return true;
     }
 
-    bool distribute(bid_t & blockID) { // 分配一个空闲块，并将块号放到blockID中，若失败则返回false
-        if (_superBlock.freeMaxi == 0) return false;
-        Block block;
-        blockID = _superBlock.freeHead;
-        _vhdc.readBlock((char *) & block, blockID);
-        _superBlock.freeHead = block.blockNext;
-        _superBlock.freeMaxi --;
+    /**
+     * 分配一个空闲块
+     * @param blockID 存放分配的块号返回值
+     * @return 操作成功与否
+     */
+    bool distribute(bid_t & blockID) {
+        if (_superBlock->freeCount > 1) { // 如果栈中空闲块数大于1
+            blockID = pop(_superBlock); // 弹栈
+        } else if (_superBlock->freeStack[0] != _minBlockID) {
+            blockID = pop(_superBlock); // 弹栈，释放下一级组长块
+            _vhdc.readBlock((char *) _superBlock, blockID); // 把组长块写入到内存超级块缓冲区
+        } else return false; // 如果栈剩余的1块为0号，说明磁盘已满
         return true;
     }
 
-    SuperBlock& superBlock() {
+    /**
+     * 超级块公有操作接口
+     * @return 超级块的引用
+     */
+    SuperBlock * superBlock() {
         return _superBlock;
     }
 };
