@@ -6,7 +6,8 @@
 #define FS_FILE_SYSTEM_CONTROLLER_H
 
 #include <adoctint.h>
-#include <utility> #include "../../utilities.h"
+#include <utility>
+#include "../../utilities.h"
 #include "../params.h"
 #include "../FBC/fbc.h"
 
@@ -49,8 +50,8 @@ private:
         time_t mtime; //修改时间
         unsigned int size; //文件大小
         unsigned int blocks; //文件所占的块数
-        unsigned int bytes; // size % blocks
-        unsigned int childCount; // 目录文件用来记录文件数
+        unsigned int bytes; // 最后一块字节数，size % blocks
+        unsigned int childCount; // 目录文件用来记录文件数？？？？数组？？？
         bid_t bid; //i节点块号
         bid_t parentDir; //父文件夹块号
         bid_t blockNum[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
@@ -58,7 +59,7 @@ private:
         char owner[_USERNAME_MAXLEN + 1]; //文件所有者
         char group[_USERNAME_MAXLEN + 1]; //文件所有组
         char mode; // 文件权限
-        char type; // 文件类型
+        char type; // 文件类型，d:目录文件；-：文件
         char padding[_INODE_PADDING];
     } INode;
 
@@ -137,36 +138,62 @@ public:
     INode * createDir(string dirName) {
         INode * dirINode = newINode();
         // TODO: 改到这里了
-        dir.name=dirName;
-        //得到当前父文件夹i节点,并修改
-        iNode inode = getPathiNode();
 
-        //strcpy(dir.parfNmae,pathNow.c_str());
-        if(_fbc.distribute(dir.index))
-        {
-            _vhdc.writeBlock((char*) &dir,dir.index);
-        }
+        dirINode->name = dirName;
+        dirINode->ctime = time(nullptr);
+        dirINode->mtime = time(nullptr);
+        dirINode->blocks = 1;
+        dirINode->type = 'd';//目录文件
+        dirINode->childCount = 0;
 
-        //找到父文件夹，写父文件夹的子文件块号
+        if(!_fbc.distribute(dirINode->bid))
+            std::cout<<"distribute unsuccessfully"<<endl;
+        dirINode->parentDir = curINode.bid;//如何获得？？？
+        INode parentINode {};
+        _vhd.readBlock((char *) &parentINode, dirINode->parentDir);//找到父文件夹，写父文件夹的子文件块号
+
+        DirBlock * dirBlock = newDirBlock();//文件夹的目录表项，也就是文件夹i节点的内容
+        _fbc.distribute(dirINode->blockNum[0]);
+        _vhd.writeBlock((char *) &dirBlock, dirINode->blockNum[0]);
     }
-    bool writeDIR(DIRHead &dir,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
+    bool writeDir(DIRHead &dir,string dirName="")//修改dir信息，如文件夹名字或者子文件变更时用到
     {
 
     }
-    bool readDIR()
+    bool readDir()
     {
 
     }
-    bool deleteDIR(DIR &dir)
+    bool deleteF(INode &file)//输入此文件（夹）的I节点，删除此文件（夹）
     {
-        if(isEmptyDIR(dir))
+        if(isEmptyDir(file))
         {
             //找到父节点删除此节点信息
             //删除此节点
+            INode parentINode {};
+            _vhd.readBlock((char *) &parentINode,file.parentDir);
+            DirBlock parentDirBlock{};
+            _vhd.readBlock((char *) &parentDirBlock,parentINode.blockNum[0]);
+            for(int i=0;i<parentINode.childCount;i++)
+                if(parentDirBlock.itemList[i]==file.bid)//在父节点删除此文件的I节点块号
+                {
+                    for(int j=i;j<parentINode.childCount-1;j++)
+                        parentDirBlock.itemList[j]=parentDirBlock.itemList[j+1];
+                    break;
+                }
+            parentINode.childCount--;
+
+            //回收所有的文件块
+
+            //回收此文件I节点
+            _vhd.recycle(file.bid);
         }
         else
         {
-            //删除此文件夹下的所有子文件
+            // 递归删除此文件夹下的所有子文件
+            _vhd.readBlock();
+            for(int i=0;i<file.childCount;i++)
+                deleteF();
         }
     }
     bool havePower(User user,char type)//判断用户是否具有对应的权限
@@ -177,30 +204,31 @@ public:
         return false;
     }
 
-    bool isExist(string fileName)//判断是否已经存在此文件
-    {
-        //获取当前文件夹的dir，遍历他的subFile，看是否有文件名
-    }
-    string openFile(string fileName)//根据文件名打开文件，返回文件的信息标识
+    bool openFile(string fileName,INode &iNode)//根据文件名打开文件，返回文件的Inode信息标识
     {
         cout<<"in openFile()"<<endl;
-        //读出vector索引index
-        //得到当前的路径pathNow
-        path=pathNow+"/"+fileName;
-        int num;//i节点所在块标号
-        for(vector<vector <string,int> >::iterator it=index.begin();it!=index.end();++it)
+        iNode->parentDir = curINode.bid;//如何获得？？？
+        DirBlock parentDirBlock{};//读父文件夹的子文件I节点块
+        _vhd.readBlock((char *) &parentDirBlock,curINode.blockNum[0]);
+
+        for(int i=0;i<curINode.childCount;i++)
         {
-            if(it[0]==path)
+            INode temp{};
+            _vhd.readBlock((char *) &temp,parentDirBlock.itemList[i]);
+            if(temp.name==fileName)
             {
-                num=it[1];
+                iNode=temp;
                 break;
             }
+            if(i==curINode.childCount-1)
+                return false;
         }
+        return true;
     }
     bool createFile(string fileName,iNode &inode,char owner[6]="",string content="")//创建文件
     {
         cout<<"in createFile()"endl;
-        if(fileName.length()>FILENAME_MAXLEN)
+        if(fileName.length()>_FILENAME_MAXLEN)
         {
             cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
             return false;
@@ -271,28 +299,9 @@ public:
         else
             std::cout<<"the file already exists,please give a different filename! "<<endl;
     }
-    iNode openFile(string fileName)//根据文件名返回文件i节点
-    {
-
-    }
-
-    bool deleteFile(string fileName)//删除文件
-    {
-        if(isExist(fileName))
-        {
-            iNode inode=openFile(fileName);
-            //删除操作
-        }
-        else
-        {
-            cout<<"sorry, the file is not existed!"<<endl;
-        }
-    }
 
 
 };
-
-
 
 
 #endif //FS_FILE_SYSTEM_CONTROLLER_H
