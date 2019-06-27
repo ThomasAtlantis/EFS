@@ -45,7 +45,7 @@ int main() {
     }
     fsc._fbc.distribute(blockID); // 7 + 128 * 2 + 1 连续分配3级两个索引块
     fsc.push(* iNode, blockID);
-    for (bid_t i = 0; i < 127; ++ i) { // freeCount == 700 崩溃
+    for (bid_t i = 0; i < 127; ++ i) {
         fsc._fbc.distribute(blockID);
         fsc.push(* iNode, blockID);
     }

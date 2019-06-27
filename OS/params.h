@@ -8,7 +8,7 @@
 // VHD和FBC层
 #define _BLOCK_SIZE 1024
 #define _OS_PART_BLOCK_SIZE 4096
-#define _BLOCK_GROUP_SIZE 2
+#define _BLOCK_GROUP_SIZE 100
 
 // FSC和VFS层
 #define _USER_FILE_NAME ......

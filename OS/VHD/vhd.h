@@ -44,6 +44,11 @@ public:
      */
     bool readBlock(char * buffer, bid_t blockID, int len = 1) { // 按块读
         _fileStream.seekg(blockID * _blockSize, std::ios::beg); // 移动文件流指针到指定位置
+        if (_fileStream.tellg() < 0) { // [IMPORTANT] 缓冲区溢出时需要重新打开文件以刷新缓冲区
+            _fileStream.close();
+            _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
+            _fileStream.seekg(blockID * _blockSize, std::ios::beg);
+        }
         _fileStream.read(buffer, _blockSize * len);
         return true;
     }
@@ -56,6 +61,11 @@ public:
      */
     bool writeBlock(char * buffer, bid_t blockID, int len = 1) { // 按块写
         _fileStream.seekp(blockID * _blockSize, std::ios::beg); // 移动文件流指针到指定位置
+        if (_fileStream.tellp() < 0) { // [IMPORTANT] 缓冲区溢出时需要重新打开文件以刷新缓冲区
+            _fileStream.close();
+            _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
+            _fileStream.seekp(blockID * _blockSize, std::ios::beg);
+        }
         _fileStream.write(buffer, _blockSize * len);
         return !!_fileStream;
     }

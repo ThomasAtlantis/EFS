@@ -99,9 +99,6 @@ public:
         _superBlock = newSuperBlock();
         push(_superBlock, _minBlockID); // 保留最小块号作尾结束指针，同时也是储存超级块的位置
         for (bid_t blockID = _minBlockID + 1; blockID <= _maxBlockID; ++ blockID) {
-            if (blockID == 700) {
-                int i = 0;
-            }
             recycle(blockID); // 依次回收剩下的所有块
         }
         saveSuperBlock(); // 只要超级块有变化，刷到硬盘
@@ -152,7 +149,6 @@ public:
             blockID = pop(_superBlock); // 弹栈
         } else if (_superBlock->freeStack[0] != _minBlockID) {
             blockID = pop(_superBlock); // 弹栈，释放下一级组长块
-            _vhdc.readBlock((char *) _superBlock, blockID); // 把组长块写入到内存超级块缓冲区
             _vhdc.readBlock((char *) _superBlock, blockID); // 把组长块写入到内存超级块缓冲区
         } else return false; // 如果栈剩余的1块为0号，说明磁盘已满
         return true;
