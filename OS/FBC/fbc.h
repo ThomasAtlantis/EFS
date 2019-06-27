@@ -52,14 +52,16 @@ private:
         return sb->freeStack[sb->freeCount];
     }
 public:
-    FBController(VHDController& vhdc, bid_t maxBlockID, bid_t minBlockID):
-        _vhdc(vhdc), _maxBlockID(maxBlockID), _minBlockID(minBlockID) {
+    FBController(VHDController& vhdc, bid_t minBlockID, bid_t maxBlockID):
+        _vhdc(vhdc), _minBlockID(minBlockID), _maxBlockID(maxBlockID), _superBlock(nullptr) {
+        _superBlock = newSuperBlock();
         loadSuperBlock();
     }
 
     bool formatting() {
+        delete _superBlock;
         _superBlock = newSuperBlock();
-        push(_superBlock, 0);
+        push(_superBlock, _minBlockID);
         for (bid_t blockID = _minBlockID + 1; blockID <= _maxBlockID; ++ blockID)
             recycle(blockID);
         saveSuperBlock();
@@ -67,11 +69,11 @@ public:
     }
 
     bool loadSuperBlock() { // 加载超级块
-        return _vhdc.readBlock((char *) & _superBlock, _minBlockID);
+        return _vhdc.readBlock((char *) _superBlock, _minBlockID);
     }
 
     bool saveSuperBlock() { // 保存超级块到VHD
-        return _vhdc.writeBlock((char *) & _superBlock, _minBlockID);
+        return _vhdc.writeBlock((char *) _superBlock, _minBlockID);
     }
 
     bool recycle(bid_t blockID) { // 回收blockID指定的块
@@ -89,7 +91,7 @@ public:
     bool distribute(bid_t & blockID) { // 分配一个空闲块，并将块号放到blockID中，若失败则返回false
         if (_superBlock->freeCount > 1) {
             blockID = pop(_superBlock);
-        } else if (_superBlock->freeStack[0] != 0) {
+        } else if (_superBlock->freeStack[0] != _minBlockID) {
             blockID = pop(_superBlock);
             _vhdc.readBlock((char *) _superBlock, blockID);
         } else return false;

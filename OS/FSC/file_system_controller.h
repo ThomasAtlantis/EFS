@@ -22,10 +22,10 @@ using std::endl;
 using std::vector;
 
 #define USER_FILE_NAME ./.....
-#define User char[]
 #define FILENAME_MAXLEN 19
 #define MAX_SUB 10
 #define ROOT_BLOCK_NUM 1
+typedef char User[];
 typedef size_t bid_t;
 /*
  * 问题：
@@ -81,10 +81,13 @@ private:
     User user; //用户名
     FBController &_fbc;
     VHDController &_vhdc;
+    INode * curINode;
 public:
     FileSystemController(User userName)
     {
         user=userName;
+        curINode = new INode;
+        curINode->name = "~";
     }
     string getPathNow()//获得当前路径目录
     {
