@@ -40,6 +40,48 @@ void pushTest() {
     fsc.push(* iNode, blockID);
 }
 
+void popBlockTest() {
+    FSController fsc("./SLOT_2/data.vhd", 0, 1000, "/home");
+    fsc._fbc.formatting();
+    auto * iNode = fsc.newINode();
+    bid_t * blockID = new bid_t;
+    for (bid_t i = 0; i < 520; ++ i) {
+        fsc._fbc.distribute(* blockID);
+        fsc.push(* iNode, * blockID);
+    }
+    for (bid_t i = 0; i < 127; ++ i) {
+        blockID = fsc.pop(* iNode);
+        fsc._fbc.recycle(* blockID);
+    }
+    blockID = fsc.pop(* iNode);
+    fsc._fbc.recycle(* blockID);
+    for (bid_t i = 0; i < 127; ++ i) {
+        blockID = fsc.pop(* iNode);
+        fsc._fbc.recycle(* blockID);
+    }
+    blockID = fsc.pop(* iNode);
+    fsc._fbc.recycle(* blockID);
+    for (bid_t i = 0; i < 127; ++ i) {
+        blockID = fsc.pop(* iNode);
+        fsc._fbc.recycle(* blockID);
+    }
+    blockID = fsc.pop(* iNode);
+    fsc._fbc.recycle(* blockID);
+    for (bid_t i = 0; i < 127; ++ i) {
+        blockID = fsc.pop(* iNode);
+        fsc._fbc.recycle(* blockID);
+    }
+    blockID = fsc.pop(* iNode);
+    fsc._fbc.recycle(* blockID);
+    for (bid_t i = 0; i < 7; ++ i) {
+        blockID = fsc.pop(* iNode);
+        fsc._fbc.recycle(* blockID);
+    }
+    blockID = fsc.pop(* iNode);
+    fsc._fbc.recycle(* blockID);
+    int k = 0;
+}
+
 void getBlockIDTest() {
     FSController fsc("./SLOT_2/data.vhd", 0, 1000, "/home");
     fsc._fbc.formatting();
@@ -85,6 +127,6 @@ void getBlockIDTest() {
 }
 
 int main() {
-    getBlockIDTest();
+    popBlockTest();
     return 0;
 }

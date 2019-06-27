@@ -267,9 +267,40 @@ public:
             return true;
         } else return false;
     }
-
-    // TODO: 测试pop
+    /**
+     * i节点索引表弹栈
+     * @param iNode i节点
+     * @return 块号
+     */
     bid_t * pop(INode &iNode) {
+        const int _1indexNumb = _1INDEX_NUM;
+        const int _2indexNumb = _2INDEX_NUM;
+        const int _3indexNumb = _3INDEX_NUM;
+        const int _2indexSize = _INDEXBLOCK_ITEM_SIZE;
+        const int _3indexSize = _2indexSize * _2indexSize;
+        const int _2_3indexDiv = _1indexNumb + _2indexNumb * _2indexSize;
+        bid_t indexBlockID;
+        if (iNode.blocks >= _1indexNumb) { // 栈顶指针超出直接索引区
+            if (iNode.blocks < _2_3indexDiv) {
+                int index  = (iNode.blocks - _1indexNumb) / _2indexSize;
+                int offset = (iNode.blocks - _1indexNumb) % _2indexSize;
+                if (offset == 0) {
+                    _fbc.recycle(iNode.indexList[_1indexNumb + index]);
+                }
+            } else if (iNode.blocks < _2_3indexDiv + _3indexNumb * _3indexSize) {
+                int index  = (iNode.blocks - _2_3indexDiv) / _3indexSize;
+                int offset = (iNode.blocks - _2_3indexDiv) % _3indexSize;
+                int index2 = (iNode.blocks - _2_3indexDiv - index * _3indexSize) / _2indexSize;
+                int offset2= (iNode.blocks - _2_3indexDiv - index * _3indexSize) % _2indexSize;
+                IndexBlock * indexBlock = newDirBlock();
+                bid_t & indexBlockID2 = iNode.indexList[_1indexNumb + _2indexNumb + index];
+                if (offset == 0 || offset2 == 0) {
+                    _vhdc.readBlock((char *) indexBlock, indexBlockID2);
+                    _fbc.recycle(indexBlock->itemList[0]);
+                    if (offset == 0) _fbc.recycle(indexBlockID2);
+                }
+            }
+        }
         if (iNode.blocks == 0) return nullptr;
         iNode.blocks --;
         return getBlockID(iNode, iNode.blocks);
