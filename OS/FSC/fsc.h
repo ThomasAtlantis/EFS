@@ -48,7 +48,7 @@ namespace group {
 // demo: iNode.mode[group::group] &= ~mode::read;
 // demo: iNode.mode[group::others] = mode::none;
 namespace fio {
-    enum operatType {
+    enum operateType {
         in = 1,
         out = 2,
         app = 4,
@@ -72,7 +72,7 @@ public:
         unsigned int size; //文件大小
         unsigned int blocks; //文件所占的块数
         unsigned int bytes; // 最后一块字节数，size % blocks
-        unsigned int childCount; // 目录文件用来记录文件数？？？？数组？？？
+        unsigned int childCount; // 目录文件用来记录文件数
         bid_t bid; //i节点块号
         bid_t parentDir; //父文件夹I节点块号
         bid_t indexList[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
@@ -326,6 +326,18 @@ public:
         }
         return nullptr;
     }
+/**
+ *
+ * 此文件夹下是否存在指定文件
+ * @param iNode
+ * @param fileName
+ * @return
+ */
+    bool exists(INode * iNode, string fileName) {
+        if(getINode(iNode,fileName)!= nullptr)
+            return true;
+        return false;
+    }
 
     /**在当前文件夹下创建子文件夹
      *@param curINode 当前目录
@@ -360,8 +372,6 @@ public:
         _vhdc.writeBlock((char *) dirINode,dirINode->bid);
         return dirINode;
     }
-
-
     /**
      *
      * 改文件名字或者所有者
@@ -372,6 +382,7 @@ public:
     bool writeDir(INode &dirINode,string dirName="",string  curUser="" )//修改dir信息，如文件夹名字或者子文件变更时用到
     {
         if(dirName!="")
+            strcpy(dirINode.name,dirName.c_str());
             strcpy(dirINode.name, dirName.c_str());
         if(curUser!="")
             strcpy(dirINode.owner,curUser.c_str());
@@ -400,12 +411,13 @@ public:
     }
     /**
      *
-     * 没写完  写不下去了
      * 此函数没有考虑文件夹具有多个块的子文件I节点
+     * 把子文件I节点从父文件夹移除，子文件I节点以及子文件没有删除
      * @param dirINode
      * @param child
      * @return
      */
+     // TODO
     bool removeDirChild(INode &dirINode, INode &child) {
         DirBlock * dirBlock = newDirBlock();
         int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
@@ -416,41 +428,12 @@ public:
         {
             if(dirBlock->itemList[i]==child.bid)
             {
-//                for(int j=i;)
+                for(int j=i;j<offset-1;j++)
+                {
+                    dirBlock->itemList[j]=dirBlock->itemList[j+1];
+                }
             }
         }
-
-        /*DirBlock * dirBlock = newDirBlock();
-        int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
-        int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
-        bid_t * blockID = getBlockID(dirINode, index);
-        if(offset==0&&index>0)//最后一块的一个
-        {
-            pop(dirINode);
-        }else{
-
-        }*/
-       /* if (!blockID) {
-            if (!_fbc.distribute(* blockID))
-                return false;
-            dirINode.blocks++;
-            push(dirINode, * blockID);
-        } else {
-            _vhdc.readBlock((char *) dirBlock, * blockID);
-        }
-        dirBlock->itemList[offset]=child.bid;
-        dirINode.childCount --;
-        _vhdc.writeBlock((char *) dirBlock, * blockID);*/
-        /*DirBlock * parentDirBlock = newDirBlock();
-        _vhdc.readBlock((char *) &parentDirBlock,parentINode.indexList[0]);
-        for(int i=0;i<parentINode.childCount;i++)
-            if(parentDirBlock.itemList[i]==file.bid)//在父节点删除此文件的I节点块号
-            {
-                for(int j=i;j<parentINode.childCount-1;j++)
-                    parentDirBlock.itemList[j]=parentDirBlock.itemList[j+1];
-                break;
-            }
-        parentINode.childCount--;*/
         return true;
     }
 /**
@@ -498,7 +481,7 @@ public:
         return result;
     }
 
-
+// TODO
     bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
         if(file.type=='D'&&isEmptyDir(file))//空的文件夹
         {
@@ -554,39 +537,11 @@ public:
     }
 
 
-    bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
-        //判断用户是否具有权限
 
-        return false;
-    }
-
-    FilePointer openFile(INode * curINode, string fileName) { //根据文件名打开文件
-        cout<<"in openFile()"<<endl;
-        DirBlock parentDirBlock{};//读父文件夹的子文件I节点块
-
-        _vhdc.readBlock((char *) &curINode, curINode->indexList[0]);
-
-        for(int i=0;i<curINode->childCount;i++)
-        {
-            INode temp{};
-            _vhdc.readBlock((char *) &temp,parentDirBlock.itemList[i]);
-            if(temp.name==fileName)
-            {
-//                iNode=temp;
-                break;
-            }
-            if(i==curINode->childCount-1)
-                return nullptr;
-        }
-        return nullptr;
-    }
-
-    bool exists(INode * iNode, string fileName) {
-        return true;
-    }
-
-    INode * createFile(INode * curINode, string curUser, string fileName) { //创建文件
+//TODO
+    INode * createFile(INode * curINode, string fileName, string curUser) { //创建文件
         cout << "in createFile()" << endl;
+        INode * iNode = newINode();
         if(fileName.length()>_FILENAME_MAXLEN)
         {
             cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
@@ -596,70 +551,126 @@ public:
         {
             //申请块，I节点
             bid_t blockID;
-            INode iNode;
             if(!_fbc.distribute(blockID))
             {
                 cout<<"distribute inode block failed!"<<endl;
                 return nullptr;
             }
-            iNode.ctime=iNode.mtime=time(nullptr);
-            iNode.bid=blockID;
-            /*
-            iNode.owner=curUser;
-            iNode.name=fileName;
-
-            iNode.size=content.length();
-            unsigned int blockNum=(content.length()-1)/BLOCK_CONTENT_SIZE + 1;
-            if(blockNum==1)//直接索引
+            iNode->ctime=iNode->mtime=time(nullptr);
+            iNode->bid=blockID;
+            strcpy(iNode->owner,curUser.c_str());
+            iNode->type='F';
+            strcpy(iNode->name,fileName.c_str());
+            iNode->size=0;
+            bid_t * firstBlock;
+            if(!_fbc.distribute(*firstBlock))
             {
-                inode.addr1=0;
-                inode.addr2=0;
-                if(_fbc.distribute(inode.indexList))
-                {
-                    _vhdc.writeBlock((char*) &content,bid[i]);
-                }
-                else
-                {
-                    _fbc.recycle(inode.indexList);
-                    return false;
-                }
+                cout<<"distribute block failed!"<<endl;
+                return nullptr;
             }
-            else if(indexList<=BLOCK_CONTENT_SIZE/4)//一次间址
-            {
-                int bid[indexList];
-                inode.addr1=1;
-                inode.addr2=0;
-                for(int i=0;i<indexList;i++)//分配块，如果失败将分配的块回收
-                {
-                    bool success=true;
-                    if(_fbc.distribute(bid[i]))
-                    {
-                        string temp=content.substr(i*BLOCK_CONTENT_SIZE,BLOCK_CONTENT_SIZE);//提取子串,从i*BLOCK_CONTENT_SIZE开始,提取BLOCK_CONTENT_SIZE个字节
-                        _vhdc.writeBlock((char*) &temp,bid[i]);
-                    }
-                    else//分配失败
-                    {
-                        for (int j = i-1; j >= 0; j--) {
-                            _fbc.recycle(bid[j]);
-                        }
-                        success=false;
-                    }
-                    if(!success)
-                        break;
-                }
-            }
-            else if(indexList<=(BLOCK_CONTENT_SIZE/4)*(BLOCK_CONTENT_SIZE/4))//二次间址
-            {
-
-            }
-            inode.indexList=indexList;
-            //写inode
-            _vhdc.writeBlock((char*) &inode,inode.bid);
-            cout<<"the file is be created successfully."<<endl;
-            */
+            push(*iNode,*firstBlock);
+            _vhdc.writeBlock((char *)iNode,iNode->bid);
         }
         else
             std::cout<<"the file already exists,please give a different filename! "<<endl;
+        return iNode;
+    }
+
+
+    FilePointer openFile(INode * curINode, string fileName) { //根据文件名打开文件
+        cout<<"in openFile()"<<endl;
+        if(exists(curINode,fileName))
+        {
+            INode * iNode = newINode();
+            iNode = getINode(curINode,fileName);
+            FilePointer filePointer;
+            filePointer->iNode=iNode;
+            filePointer->type=iNode->type;
+            return filePointer;
+        }
+        else
+        {
+            cout<<"the file is not existed!"<<endl;
+        }
+        return nullptr;
+    }
+
+    void addFile(INode * curINode,string fileName, string content)
+    {
+        FilePointer  filePointer;
+        filePointer=openFile(curINode,fileName);
+        if(filePointer->type==)//是否具有写权限
+        {
+
+        }
+        else{
+            cout<<"sorry, you can not write this file!"<<endl;
+        }
+    }
+
+    string readFile(INode *curINode, string fileName)
+    {
+        string buffer;
+        INode * iNode;
+        iNode=getINode(curINode,fileName);
+        for(int i=0;i<iNode->blocks;i++)
+        {
+            bid_t * blockNum=getBlockID(*iNode,i);
+            string temp;
+            _vhdc.readBlock((char *) &temp,*blockNum);
+            buffer+=temp;
+        }
+        return buffer;
+    }
+    /**
+     * 此函数目前有问题
+     * @param curINode
+     * @param fileName
+     * @param buffer
+     * @return
+     */
+    bool writeFile(INode *curINode, string fileName,string buffer)
+    {
+        INode * iNode;
+        iNode=getINode(curINode,fileName);
+
+        return true;
+    }
+    /**
+     * 移动文件
+     * @param curINode
+     * @param oldPath
+     * @param newPath
+     * @param fileName
+     * @return
+     */
+
+    bool removeFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
+    {
+        INode * iNode=newINode();
+        iNode=getINode(curINode,fileName);
+        removeDirChild(*oldPath,*iNode);
+        addDirChild(*newPath,*iNode);
+    }
+    /**
+     * 复制文件到指定文件夹
+     * @return
+     */
+    bool copyFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
+    {
+        INode * iNode=newINode();
+        iNode=getINode(curINode,fileName);
+        //读出文件节点和文件内容，并将他们写到新文件夹的新建的空闲块中
+
+        addDirChild(*newPath,)
+
+    }
+
+    bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
+        //判断用户是否具有权限
+
+
+        return false;
     }
 
 };
