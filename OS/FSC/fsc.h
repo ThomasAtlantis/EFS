@@ -47,10 +47,24 @@ namespace group {
 // demo: iNode.mode[group::user] |= mode::read| mode::write;
 // demo: iNode.mode[group::group] &= ~mode::read;
 // demo: iNode.mode[group::others] = mode::none;
-
+namespace fio {
+    enum operatType {
+        in = 1,
+        out = 2,
+        app = 4,
+        bin = 8
+    };
+}
+// 用法相似，参考group
 
 class FSController {
 private:
+    VHDController _vhdc; // 虚拟磁盘管理器
+    FBController _fbc; // 空闲块管理器
+    const bid_t _minBlockID; // 文件系统管理的最小块号
+    const bid_t _maxBlockID; // 文件系统管理的最大块号
+public:
+    string partition; // 分区名
     #pragma pack(1)
     typedef struct {
         time_t ctime; //创建时间
@@ -66,7 +80,7 @@ private:
         char owner[_USERNAME_MAXLEN + 1]; //文件所有者
         char group[_USERNAME_MAXLEN + 1]; //文件所有组
         char mode[3]; // 文件权限
-        char type; // 文件类型
+        char type; // 文件类型: 'L'链接文件，'D'目录文件，'F'普通文件
         char padding[_INODE_PADDING];
     } INode;
 
@@ -76,10 +90,10 @@ private:
     } DirBlock, IndexBlock;
     #pragma pack()
 
-    VHDController _vhdc; // 虚拟磁盘管理器
-    FBController _fbc; // 空闲块管理器
-    const bid_t _minBlockID; // 文件系统管理的最小块号
-    const bid_t _maxBlockID; // 文件系统管理的最大块号
+    typedef struct {
+        INode * iNode;
+        char type;
+    } * FilePointer;
 
     /**
      * 获取新INode并初始化
@@ -101,10 +115,6 @@ private:
         for (auto &item: dirBlock->itemList) item = _minBlockID;
         return dirBlock;
     }
-    DirBlock * (*newIndexBlock)() = newDirBlock;
-public:
-
-    string partition; // 分区名
 
     /**
      * 文件系统构造函数
@@ -161,7 +171,7 @@ public:
             int _2indexOffset = (i - _12div) % listSize;
             IndexBlock indexBlock;
             _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_12div + _2indexIndex]);
-            return &indexBlock.itemList[_2indexOffset];
+            return new bid_t(indexBlock.itemList[_2indexOffset]);
         } else if (i < indexTotal) {
             int _3indexIndex = (i - _23div) / (listSize * listSize);
             int _3indexIndexIndex = (i - _23div - _3indexIndex * listSize * listSize) / listSize;
@@ -169,7 +179,7 @@ public:
             IndexBlock indexBlock;
             _vhdc.readBlock((char *) &indexBlock, iNode.indexList[_23div + _2INDEX_NUM + _3indexIndex]);
             _vhdc.readBlock((char *) &indexBlock, indexBlock.itemList[_3indexIndexIndex]);
-            return &indexBlock.itemList[_3indexOffset];
+            return new bid_t(indexBlock.itemList[_3indexOffset]);
         } else return nullptr;
     }
 
@@ -215,7 +225,7 @@ public:
      * @param dirName 新建的文件夹名字
      *@return 新建文件夹的INode
      */
-    INode * createDir(string dirName,INode * curINode) {
+    INode * createDir(INode * curINode, string curUser, string dirName) {
         INode * dirINode = newINode();
         // TODO: 改到这里了
         dirINode->name = dirName;
@@ -244,22 +254,26 @@ public:
         if(dirName!="")
             dirINode.name=dirName;
         dirINode.mtime=time(nullptr);
-
     }
-    bool readDir()
-    {
 
+    bool addDirChild(INode &dirINode, INode &child) {
+        return true;
     }
-    bool deleteF(INode &file)//输入此文件（夹）的I节点，删除此文件（夹）
-    {
+    bool removeDirChild(INode &dirINode, INode &child) {
+        return true;
+    }
+    vector<INode *> listDir(INode &dirINode) {
+        return {};
+    }
+    bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
         if(isEmptyDir(file))
         {
             //找到父节点删除此节点信息
             //删除此节点
             INode parentINode {};
-            _vhd.readBlock((char *) &parentINode,file.parentDir);
+            _vhdc.readBlock((char *) &parentINode,file.parentDir);
             DirBlock parentDirBlock{};
-            _vhd.readBlock((char *) &parentDirBlock,parentINode.indexList[0]);
+            _vhdc.readBlock((char *) &parentDirBlock,parentINode.indexList[0]);
             for(int i=0;i<parentINode.childCount;i++)
                 if(parentDirBlock.itemList[i]==file.bid)//在父节点删除此文件的I节点块号
                 {
@@ -272,70 +286,75 @@ public:
             //回收所有的文件块
 
             //回收此文件I节点
-            _vhd.recycle(file.bid);
+            _fbc.recycle(file.bid);
         }
         else
         {
             // 递归删除此文件夹下的所有子文件
-            _vhd.readBlock();
-            for(int i=0;i<file.childCount;i++)
-                deleteF();
+//            _vhdc.readBlock();
+//            for(int i=0;i<file.childCount;i++)
+//                removeFile();
         }
+        return true;
+
     }
-    bool havePower(User user,char type)//判断用户是否具有对应的权限
-    {
-        ifstream userTab(USER_FILE_NAME);//上面宏定义需要改
+    bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
         //判断用户是否具有权限
 
         return false;
     }
 
-    bool openFile(string fileName,INode &iNode)//根据文件名打开文件，返回文件的Inode信息标识
-    {
+    FilePointer openFile(INode * curINode, string fileName) { //根据文件名打开文件
         cout<<"in openFile()"<<endl;
-        iNode->parentDir = curINode.bid;//如何获得？？？
         DirBlock parentDirBlock{};//读父文件夹的子文件I节点块
-        _vhd.readBlock((char *) &parentDirBlock,curINode.indexList[0]);
 
-        for(int i=0;i<curINode.childCount;i++)
+        _vhdc.readBlock((char *) &curINode, curINode->indexList[0]);
+
+        for(int i=0;i<curINode->childCount;i++)
         {
             INode temp{};
-            _vhd.readBlock((char *) &temp,parentDirBlock.itemList[i]);
+            _vhdc.readBlock((char *) &temp,parentDirBlock.itemList[i]);
             if(temp.name==fileName)
             {
-                iNode=temp;
+//                iNode=temp;
                 break;
             }
-            if(i==curINode.childCount-1)
-                return false;
+            if(i==curINode->childCount-1)
+                return nullptr;
         }
+        return nullptr;
+    }
+
+    bool exists(INode * iNode, string fileName) {
         return true;
     }
-    bool createFile(string fileName,iNode &inode,char owner[6]="",string content="")//创建文件
-    {
-        cout<<"in createFile()"endl;
+
+    INode * createFile(INode * curINode, string curUser, string fileName) { //创建文件
+        cout << "in createFile()" << endl;
         if(fileName.length()>_FILENAME_MAXLEN)
         {
             cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
-            return false;
+            return nullptr;
         }
-        if(!isExist(fileName))//重名等其他判断
+        if(!exists(curINode, fileName))//重名等其他判断
         {
             //申请块，I节点
             bid_t blockID;
+            INode iNode;
             if(!_fbc.distribute(blockID))
             {
                 cout<<"distribute inode block failed!"<<endl;
-                return false;
+                return nullptr;
             }
-            inode.ctime=inode.mtime=time(nullptr);
-            inode.bid=blockID;
-            inode.owner=owner;
-            inode.name=fileName;
+            iNode.ctime=iNode.mtime=time(nullptr);
+            iNode.bid=blockID;
+            /*
+            iNode.owner=curUser;
+            iNode.name=fileName;
 
-            inode.size=content.length();
-            unsigned int indexList=(content.length()-1)/BLOCK_CONTENT_SIZE + 1;
-            if(indexList==1)//直接索引
+            iNode.size=content.length();
+            unsigned int blockNum=(content.length()-1)/BLOCK_CONTENT_SIZE + 1;
+            if(blockNum==1)//直接索引
             {
                 inode.addr1=0;
                 inode.addr2=0;
@@ -381,11 +400,11 @@ public:
             //写inode
             _vhdc.writeBlock((char*) &inode,inode.bid);
             cout<<"the file is be created successfully."<<endl;
+            */
         }
         else
             std::cout<<"the file already exists,please give a different filename! "<<endl;
     }
-
 
 };
 
