@@ -3,9 +3,7 @@
 //
 #include "../FSC/fsc.h"
 
-int main()
-{
-    FileSystemController fsc("wgq");
-    iNode inode;
-    fsc.createFile("123",inode,"wgq1","12345678998778999");
+int main() {
+    FSController fsc("./SLOT_2/data.vhd", 0, 1000, "/home");
+    return 0;
 }
