@@ -48,7 +48,7 @@ namespace group {
 // demo: iNode.mode[group::group] &= ~mode::read;
 // demo: iNode.mode[group::others] = mode::none;
 namespace fio {
-    enum operatType {
+    enum operateType {
         in = 1,
         out = 2,
         app = 4,
@@ -524,6 +524,64 @@ public:
         else{
             cout<<"sorry, you can not write this file!"<<endl;
         }
+    }
+
+    string readFile(INode *curINode, string fileName)
+    {
+        string buffer;
+        INode * iNode;
+        iNode=getINode(curINode,fileName);
+        for(int i=0;i<iNode->blocks;i++)
+        {
+            bid_t * blockNum=getBlockID(*iNode,i);
+            string temp;
+            _vhdc.readBlock((char *) &temp,*blockNum);
+            buffer+=temp;
+        }
+        return buffer;
+    }
+    /**
+     * 此函数目前有问题
+     * @param curINode
+     * @param fileName
+     * @param buffer
+     * @return
+     */
+    bool writeFile(INode *curINode, string fileName,string buffer)
+    {
+        INode * iNode;
+        iNode=getINode(curINode,fileName);
+
+        return true;
+    }
+    /**
+     * 移动文件
+     * @param curINode
+     * @param oldPath
+     * @param newPath
+     * @param fileName
+     * @return
+     */
+
+    bool removeFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
+    {
+        INode * iNode=newINode();
+        iNode=getINode(curINode,fileName);
+        removeDirChild(*oldPath,*iNode);
+        addDirChild(*newPath,*iNode);
+    }
+    /**
+     * 复制文件到指定文件夹
+     * @return
+     */
+    bool copyFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
+    {
+        INode * iNode=newINode();
+        iNode=getINode(curINode,fileName);
+        //读出文件节点和文件内容，并将他们写到新文件夹的新建的空闲块中
+        
+        addDirChild(*newPath,)
+
     }
 
     bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
