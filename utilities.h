@@ -11,12 +11,14 @@
 #include <string>
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 using std::string;
 using std::vector;
 using std::cout;
 using std::endl;
 using std::cin;
+using std::map;
 
 #define all(x) (x).begin(),(x).end()
 
@@ -51,6 +53,7 @@ public:
         size_t index = fileName.rfind('.');
         return fileName.substr(0, index);
     }
+
 };
 
 class BufferTool {
