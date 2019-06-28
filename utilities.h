@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <cctype>
 
 using std::string;
 using std::vector;
@@ -79,6 +80,44 @@ public:
         }
         if (str.length()) result.push_back(str);
         return result;
+    }
+    vector<string> split(char * data, size_t size, char sep) {
+        vector<string> result;
+        size_t begin = 0;
+        for (size_t i = 0; i < size; ++ i) {
+            if (data[i] == sep) {
+                data[i] = '\0';
+                if (i > begin) result.emplace_back(data + begin);
+                data[i] = sep;
+                begin = i + 1;
+            }
+        }
+        return result;
+    }
+    char * strip(char * data, size_t size, char trim) {
+        size_t lIndex = 0, rIndex = size - 1;
+        while (lIndex < size && data[lIndex ++] == trim);
+        if (lIndex == size) return nullptr;
+        while (rIndex >= lIndex && data[rIndex --] == trim);
+        auto * result = new char [rIndex - lIndex];
+        BufferTool().copy(data + lIndex, result, rIndex - lIndex);
+        return result;
+    }
+    string& lstrip(string &str) {
+        string::iterator p = find_if(str.begin(), str.end(), std::not1(std::ptr_fun<int, int>(isspace)));
+        str.erase(str.begin(), p);
+        return str;
+    }
+
+    string& rstrip(string &str) {
+        string::reverse_iterator p = find_if(str.rbegin(), str.rend(), std::not1(std::ptr_fun<int, int>(isspace)));
+        str.erase(p.base(), str.end());
+        return str;
+    }
+
+    string& strip(string &str) {
+        lstrip(rstrip(str));
+        return str;
     }
 };
 
