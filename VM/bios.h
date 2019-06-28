@@ -12,9 +12,18 @@
 
 #define DEBUG 0
 #define FORMATTING 0
+#define _CONFIGURE_OFFSET 0
+#define _SLICE_BLOCK_SIZE 4096
+
+// TODO: 在i节点中加入系统分片信息，并进行空余分片维护
 
 class BIOS {
 private:
+    #pragma pack(1)
+    typedef struct {
+        bool installed;
+    } Configure;
+    #pragma pack()
     bool trouble;
     string majorDisk;
     string majorSlot;
@@ -117,6 +126,16 @@ public:
                             _fsc->writeFileFromBuf(iNode, buff, file.size);
                             _fsc->flushDisk();
                             delete buff;
+                            Configure configure;
+                            configure.installed = false;
+                            vector<INode> osFileNames;
+                            for (const auto &file: _fsc->dir()) {
+                                if (FileTool().ext(file.name) == "img") {
+                                    osFileNames.emplace_back(file);
+                                }
+                            }
+                            _vhdc->writeBlock((char *) & configure,
+                                  osFileNames.size() * _SLICE_BLOCK_SIZE + _CONFIGURE_OFFSET);
                             cout << "successfully installed " << USBs[option]
                                  << ": " << file.name << endl;
                             trouble = false;
@@ -163,7 +182,7 @@ public:
         cout << "decompressing " << osFileNames[option].name << " from disk ... ";
         string exeName = majorSlot + FileTool().name(osFileNames[option].name).append(".exe");
         if (_fsc->decompressEXE(exeName, osFileNames[option])) cout << "done" << endl;
-        return exeName;
+        return exeName.append("-i "+ std::to_string(osFileNames.size() - 1 - option));
     }
 };
 

@@ -5,6 +5,7 @@
 #ifndef FS_FILE_SYSTEM_CONTROLLER_H
 #define FS_FILE_SYSTEM_CONTROLLER_H
 
+#include <utility>
 #include "../../utilities.h"
 #include "../params.h"
 #include "../FBC/fbc.h"
@@ -56,6 +57,10 @@ namespace fio {
     };
 }
 // 用法相似，参考group
+typedef struct {
+    char * data;
+    size_t size;
+} Buffer;
 
 class FSController {
 private:
@@ -83,6 +88,8 @@ public:
         char type; // 文件类型: 'L'链接文件，'D'目录文件，'F'普通文件
         char padding[_INODE_PADDING];
     } INode;
+
+    INode * rootINode;
 
     typedef struct {
         bid_t itemList[_DIRBLOCK_ITEM_SIZE]; // 目录表项：下级文件的INode所在块号
@@ -127,12 +134,15 @@ public:
         string disk,
         bid_t minBlockID,
         bid_t maxBlockID,
-        string part):
+        string partName,
+        string userName):
         _vhdc(std::move(disk)),
         _minBlockID(minBlockID),
         _maxBlockID(maxBlockID),
         _fbc(_vhdc, minBlockID, maxBlockID),
-        partition(std::move(part)){}
+        partition(std::move(partName)) {
+        rootINode = createRootDir(partName, std::move(userName));
+    }
     /**
      * 获取当前路径名
      * @param curINode
@@ -326,13 +336,14 @@ public:
         }
         return nullptr;
     }
-/**
- *
- * 此文件夹下是否存在指定文件
- * @param iNode
- * @param fileName
- * @return
- */
+
+    /**
+     *
+     * 此文件夹下是否存在指定文件
+     * @param iNode
+     * @param fileName
+     * @return
+     */
     bool exists(INode * iNode, string fileName) {
         if(getINode(iNode,fileName)!= nullptr)
             return true;
@@ -372,6 +383,36 @@ public:
         _vhdc.writeBlock((char *) dirINode,dirINode->bid);
         return dirINode;
     }
+
+    INode * createRootDir(string dirName, string curUser) {
+        if (dirName.length() > _FILENAME_MAXLEN)
+            return nullptr;
+        INode * dirINode = newINode();
+        strcpy(dirINode->name, dirName.c_str());
+        dirINode->ctime = time(nullptr);
+        dirINode->mtime = time(nullptr);
+        dirINode->blocks = 1;
+        dirINode->type = 'D';//目录文件
+        dirINode->childCount = 0;
+        dirINode->mode[group::user] = mode::total;
+        dirINode->mode[group::group] = mode::total;
+        dirINode->mode[group::others] = mode::total;
+        strcpy(dirINode->owner,curUser.c_str());
+        if(!_fbc.distribute(dirINode->bid))
+        {
+            std::cout<<"distribute unsuccessfully"<<endl;
+            return nullptr;
+        }
+        dirINode->parentDir = _minBlockID;
+        bid_t num;
+        _fbc.distribute(num);
+        push(*dirINode,num);
+        DirBlock * dirBlock = newDirBlock();
+        _vhdc.writeBlock((char *) dirBlock ,num);
+        _vhdc.writeBlock((char *) dirINode,dirINode->bid);
+        return dirINode;
+    }
+
     /**
      *
      * 改文件名字或者所有者
@@ -599,7 +640,7 @@ public:
     {
         FilePointer  filePointer;
         filePointer=openFile(curINode,fileName);
-        if(filePointer->type==)//是否具有写权限
+        if(filePointer->type=='F')//是否具有写权限
         {
 
         }
@@ -608,17 +649,17 @@ public:
         }
     }
 
-    string readFile(INode *curINode, string fileName)
-    {
-        string buffer;
+    Buffer readFile(INode *curINode, string fileName) {
         INode * iNode;
-        iNode=getINode(curINode,fileName);
-        for(int i=0;i<iNode->blocks;i++)
-        {
-            bid_t * blockNum=getBlockID(*iNode,i);
-            string temp;
-            _vhdc.readBlock((char *) &temp,*blockNum);
-            buffer+=temp;
+        Buffer buffer;
+        iNode = getINode(curINode, std::move(fileName));
+        buffer.data = new char [iNode->size];
+        buffer.size = iNode->size;
+        char * p = buffer.data;
+        for(int i = 0; i < iNode->blocks; i ++) {
+            bid_t * blockNum = getBlockID(*iNode, i);
+            _vhdc.readBlock(p, *blockNum);
+            p += _BLOCK_SIZE;
         }
         return buffer;
     }
@@ -651,6 +692,7 @@ public:
         iNode=getINode(curINode,fileName);
         removeDirChild(*oldPath,*iNode);
         addDirChild(*newPath,*iNode);
+        return true;
     }
     /**
      * 复制文件到指定文件夹
@@ -662,8 +704,8 @@ public:
         iNode=getINode(curINode,fileName);
         //读出文件节点和文件内容，并将他们写到新文件夹的新建的空闲块中
 
-        addDirChild(*newPath,)
-
+//        addDirChild(*newPath,)
+        return true;
     }
 
     bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限

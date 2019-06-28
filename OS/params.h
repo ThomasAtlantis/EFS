@@ -22,4 +22,17 @@
     - _3INDEX_NUM \
     - _2INDEX_NUM)
 
+// OS
+#define _MAX_USERS 16
+#define _PARTSIZE_SYS 1024
+#define _PARTNAME_SYS ("/sys")
+#define _PARTNAME_SHARE ("/share")
+#define _PARTNAME_USER ("/usr")
+#define _SUPERADMIN_NAME ("root")
+#define _CONFIGURE_OFFSET 1
+#define _INSTALL_FLAG_OFFSET 0
+#define _INFORMATION_SIZE 2
+#define _SLICE_BLOCK_SIZE 4096
+#define _MAX_PARTITIONS 10
+#define _PASSWORD_LENGTH 6
 #endif //EFS_UTILITY_H

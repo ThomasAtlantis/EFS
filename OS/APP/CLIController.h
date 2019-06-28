@@ -32,8 +32,6 @@ private:
 public:
     CLIController(){
         InitUser();
-        cout << "--------Welcome!--------" << endl;
-        LoginSystem();
     }
     ~CLIController(){}
 
@@ -144,13 +142,57 @@ public:
         }else if(pCommand == "clear"){
 
         }else if(pCommand == "exit"){
-            exit(0);
+            return false;
         }else if(pCommand == "clear"){
             system("cls");
         }else{
             cout << "not found command" << endl;
         }
+        return true;
     };
+
+    string inputPassword(int size = _PASSWORD_LENGTH) {
+        int ch, p = 0;
+        char password[_PASSWORD_LENGTH + 1] = {0};
+        while (true) {
+            password[p ++] = static_cast<char>(_getch());
+            if (password[p - 1] == '\b') {
+                if (p > 1) {
+                    p = max(0, p - 2);
+                    cout << "\b \b";
+                }
+            } else cout << "*";
+            if (p >= size) {
+                while ((ch = _getch()) != '\r' && ch != '\b');
+                if (ch == '\b') {
+                    p = size - 1;
+                    cout << "\b \b";
+                } else {
+                    cout << endl;
+                    break;
+                }
+            }
+        }
+        return string(password);
+    }
+
+    string inputText(char limit = 'N') {
+        int ch; string text {};
+        while (true) {
+            ch = _getch();
+            if (ch == '\b') {
+                if (text.length() > 0) {
+                    text = text.substr(0, text.length() - 1);
+                    cout << "\b \b";
+                }
+            } else if (ch == '\r') {
+                return text;
+            } else if (limit == 'N' && ch <= '9' && ch >= '0') {
+                text += static_cast<char>(ch);
+                cout << static_cast<char>(ch);
+            }
+        }
+    }
 
     bool OpenCommandFile(string commond){
         PROCESS_INFORMATION ProcessInfo;
@@ -171,12 +213,13 @@ public:
             CloseHandle(ProcessInfo.hThread);
             CloseHandle(ProcessInfo.hProcess);
         }
-        else
-            MessageBox(NULL,"The process could not be started",NULL,NULL);
+//        else
+//            MessageBox(NULL,"The process could not be started",NULL,NULL);
+        return true;
     };
 
     void LoginSystem(){
-        map<string, string> ::iterator it;
+        map<string, string>::iterator it;
         while(1){
             string userName;
             cout << "login: ";
