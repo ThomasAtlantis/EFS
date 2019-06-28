@@ -127,7 +127,8 @@ public:
         string disk,
         bid_t minBlockID,
         bid_t maxBlockID,
-        string part):
+        string part
+        ):
         _vhdc(std::move(disk)),
         _minBlockID(minBlockID),
         _maxBlockID(maxBlockID),
