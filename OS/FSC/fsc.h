@@ -5,7 +5,6 @@
 #ifndef FS_FILE_SYSTEM_CONTROLLER_H
 #define FS_FILE_SYSTEM_CONTROLLER_H
 
-#include <utility>
 #include "../../utilities.h"
 #include "../params.h"
 #include "../FBC/fbc.h"
@@ -66,6 +65,10 @@ class FSController {
 private:
     const bid_t _minBlockID; // 文件系统管理的最小块号
     const bid_t _maxBlockID; // 文件系统管理的最大块号
+    char _userNames[_MAX_USERS][_USERNAME_MAXLEN];
+    char _userGroup[_MAX_USERS];
+    int _userCount;
+    int _curUser;
 public:
     VHDController _vhdc; // 虚拟磁盘管理器
     FBController _fbc; // 空闲块管理器
@@ -100,7 +103,7 @@ public:
     typedef struct {
         INode * iNode;
         char type;
-    } * FilePointer;
+    } FilePointer;
 
     /**
      * 获取新INode并初始化
@@ -141,8 +144,16 @@ public:
         _maxBlockID(maxBlockID),
         _fbc(_vhdc, minBlockID, maxBlockID),
         partition(std::move(partName)) {
-        rootINode = createRootDir(partName, std::move(userName));
+        rootINode = createRootDir(partName, userName);
     }
+
+    void setUserSystem(char userNames[_MAX_USERS][_USERNAME_MAXLEN], char userGroup[_MAX_USERS], int userCount, int curUser) {
+        BufferTool().copy(&_userNames[0][0], &userNames[0][0], _MAX_USERS*_USERNAME_MAXLEN);
+        BufferTool().copy(& _userGroup[0], & userGroup[0], _MAX_USERS);
+        _userCount = userCount;
+        _curUser = curUser;
+    }
+
     /**
      * 获取当前路径名
      * @param curINode
@@ -446,6 +457,7 @@ public:
      */
      //TODO: test addDirChild
     bool addDirChild(INode &dirINode, INode &child) {
+         if (!accessible(dirINode, mode::write)) return false;
         DirBlock * dirBlock = newDirBlock();
         int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
         int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
@@ -472,6 +484,7 @@ public:
      */
      // TODO: test removeDirChild
     bool removeDirChild(INode &dirINode, INode &child) {
+         if (!accessible(dirINode, mode::write)) return false;
         DirBlock * dirBlock = newDirBlock();
         int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
         int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
@@ -498,6 +511,7 @@ public:
      */
     // TODO: test listDir
     vector<INode *> listDir(INode &dirINode) {
+        if (!accessible(dirINode, mode::read)) return {};
         vector <INode *> result;
         if(dirINode.type=='F'||(dirINode.type=='D'&&isEmptyDir(dirINode))) // 文件或空文件夹
         {
@@ -533,13 +547,14 @@ public:
 
     // TODO: test removeFile
     bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
+        if (!accessible(file, mode::write)) return false;
         if(file.type=='D'&&isEmptyDir(file))//空的文件夹
         {
             //找到父节点删除此节点信息
             //删除此节点
             INode * parentINode = newINode();
             _vhdc.readBlock((char *) parentINode,file.parentDir);
-            removeDirChild(*parentINode,file);
+            removeDirChild(*parentINode, file);
             bid_t * blockID = pop(file);
             _fbc.recycle(* blockID);//回收此节点块和此文件块
             _fbc.recycle(file.bid);
@@ -592,6 +607,7 @@ public:
 
     //TODO: test createFile
     INode * createFile(INode * curINode, string fileName, string curUser) { //创建文件
+        if (!accessible(*curINode, mode::write)) return nullptr;
         cout << "in createFile()" << endl;
         INode * iNode = newINode();
         if(fileName.length()>_FILENAME_MAXLEN)
@@ -629,16 +645,16 @@ public:
         return iNode;
     }
 
-
-    FilePointer openFile(INode * curINode, string fileName) { //根据文件名打开文件
-        cout<<"in openFile()"<<endl;
-        if(exists(curINode,fileName))
-        {
-            INode * iNode = newINode();
-            iNode = getINode(curINode,fileName);
-            FilePointer filePointer;
-            filePointer->iNode=iNode;
-            filePointer->type=iNode->type;
+    // TODO: 加入权限判断，将用户表传进来
+    FilePointer * openFile(INode * curINode, string fileName, char type) { //根据文件名打开文件
+//        cout<<"in openFile()"<<endl;
+        if ((type & fio::in) && !accessible(*curINode, mode::read)) return nullptr;
+        if ((type & fio::out) && !accessible(*curINode, mode::write)) return nullptr;
+        INode * iNode = getINode(curINode, std::move(fileName));
+        if(iNode) {
+            auto * filePointer = new FilePointer;
+            filePointer->iNode = iNode;
+            filePointer->type = type;
             return filePointer;
         }
         else
@@ -648,45 +664,69 @@ public:
         return nullptr;
     }
 
-    void addFile(INode * curINode,string fileName, string content)
-    {
-        FilePointer  filePointer;
-        filePointer=openFile(curINode,fileName);
-        if(filePointer->type=='F')//是否具有写权限
-        {
-
-        }
-        else{
-            cout<<"sorry, you can not write this file!"<<endl;
-        }
-    }
-
-    Buffer readFile(INode *curINode, string fileName) {
-        INode * iNode;
-        Buffer buffer;
-        iNode = getINode(curINode, std::move(fileName));
-        buffer.data = new char [iNode->size];
-        buffer.size = iNode->size;
-        char * p = buffer.data;
-        for(int i = 0; i < iNode->blocks; i ++) {
-            bid_t * blockNum = getBlockID(*iNode, i);
+    Buffer * readFile(FilePointer fp) {
+        if (!(fp.type & fio::in) || fp.iNode->blocks == 0) return nullptr;
+        auto * buffer = new Buffer;
+        buffer->data = new char [fp.iNode->blocks * _BLOCK_SIZE];
+        buffer->size = fp.iNode->size;
+        char * p = buffer->data;
+        for (int i = 0; i < fp.iNode->blocks - 1; i ++) {
+            bid_t * blockNum = getBlockID(*fp.iNode, i);
             _vhdc.readBlock(p, *blockNum);
             p += _BLOCK_SIZE;
         }
+        char block[_BLOCK_SIZE];
+        bid_t * blockID = getBlockID(*fp.iNode, fp.iNode->blocks - 1);
+        _vhdc.readBlock(block, *blockID);
+        BufferTool().copy(p, block, fp.iNode->bytes);
         return buffer;
     }
-    /**
-     * 此函数目前有问题
-     * @param curINode
-     * @param fileName
-     * @param buffer
-     * @return
-     */
-    bool writeFile(INode *curINode, string fileName,string buffer)
-    {
-        INode * iNode;
-        iNode=getINode(curINode,fileName);
 
+    /**
+     * 写文件
+     * @param fp 打开文件的文件指针
+     * @param buffer 文件缓冲区
+     * @return 操作成功与否
+     */
+    bool writeFile(FilePointer fp, Buffer buffer) {
+        if (!(fp.type & (fio::out| fio::app))) return false;
+        if (fp.type & fio::app) {
+            size_t size = buffer.size;
+            if (fp.iNode->bytes != 0) {
+                size_t headSize;
+                bid_t * blockID = getBlockID(* fp.iNode, fp.iNode->blocks - 1);
+                char block[_BLOCK_SIZE];
+                _vhdc.readBlock(block, * blockID);
+                headSize = std::min(buffer.size, size_t (_BLOCK_SIZE - fp.iNode->bytes));
+                BufferTool().copy(block + fp.iNode->bytes, buffer.data, headSize);
+                _vhdc.writeBlock(block, *blockID);
+                size -= headSize;
+            }
+            if (size != 0) {
+                bid_t blockID;
+                char *p = buffer.data;
+                for (int i = 0; i < size / _BLOCK_SIZE; i++) {
+                    _fbc.distribute(blockID);
+                    _vhdc.writeBlock(p, blockID);
+                    push(*fp.iNode, blockID);
+                    p += _BLOCK_SIZE;
+                }
+                _fbc.distribute(blockID);
+                push(*fp.iNode, blockID);
+                fp.iNode->bytes = unsigned int(size % _BLOCK_SIZE);
+                _vhdc.writeBlock(p, blockID);
+            }
+        } else if (fp.type & fio::out) {
+            for (int i = 0; i < fp.iNode->blocks; ++ i) {
+                bid_t * blockID = pop(*fp.iNode);
+                _fbc.recycle(* blockID);
+            }
+            fp.iNode->size = 0;
+            fp.iNode->bytes = 0;
+            fp.type |= fio::app;
+            writeFile(fp, buffer);
+        }
+        _vhdc.writeBlock((char *) fp.iNode, fp.iNode->bid);
         return true;
     }
     /**
@@ -698,35 +738,66 @@ public:
      * @return
      */
 
-    bool removeFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
-    {
-        INode * iNode=newINode();
-        iNode=getINode(curINode,fileName);
-        removeDirChild(*oldPath,*iNode);
+    // TODO: test moveFile
+    bool moveFile(INode * oldPath, INode * newPath, string fileName) {
+        if (!accessible(*newPath, mode::write) ||
+            !accessible(*oldPath, mode::write)) return false;
+        INode * iNode = getINode(oldPath, fileName);
         addDirChild(*newPath,*iNode);
+        removeDirChild(*oldPath,*iNode);
         return true;
     }
     /**
      * 复制文件到指定文件夹
      * @return
      */
-    bool copyFile(INode * curINode,INode * oldPath,INode * newPath,string fileName)
-    {
-        INode * iNode=newINode();
-        iNode=getINode(curINode,fileName);
-        //读出文件节点和文件内容，并将他们写到新文件夹的新建的空闲块中
-
-//        addDirChild(*newPath,)
+    bool copyFile(INode * oldPath, INode * newPath, string fileName) {
+        if (!accessible(*oldPath, mode::read) ||
+            !accessible(*newPath, mode::write)) return false;
+        INode * iNode = getINode(oldPath, std::move(fileName));
+        if (!iNode) return false;
+        char block[_BLOCK_SIZE];
+        INode * iNodeNew = newINode();
+        for (int i = 0; i < iNode->blocks; ++ i) {
+            bid_t * blockID = getBlockID(*iNode, i);
+            _vhdc.readBlock(block, *blockID);
+            _fbc.distribute(*blockID);
+            _vhdc.writeBlock(block, *blockID);
+            push(*iNodeNew, *blockID);
+        }
+        addDirChild(*newPath, *iNodeNew);
+        bid_t blockID;
+        _fbc.distribute(blockID);
+        iNodeNew->bytes = iNode->bytes;
+        iNodeNew->size = iNode->size;
+        iNodeNew->bid = blockID;
+        iNode->mtime = iNode->ctime = time(nullptr);
+        _vhdc.writeBlock((char *)iNodeNew, blockID);
         return true;
     }
 
-    bool accessible(FilePointer fp, char group) { //判断用户是否具有对应的权限
-        //判断用户是否具有权限
-
-
-        return false;
+    bool accessible(INode& iNode, char mode) { //判断用户是否具有对应的权限
+        int attrGroup = getAttrGroup(getOwner(iNode), _curUser);
+        return (iNode.mode[attrGroup] & mode);
     }
 
+    string getOwner(INode &iNode) {
+        return string(iNode.owner);
+    }
+
+    int getAttrGroup(string owner, int user) {
+        if (owner == _userNames[user]) return group::user;
+        for (int i = 0; i < _userCount; ++ i) {
+            if (_userNames[i] == owner) {
+                if (_userGroup[i] == _userGroup[user]) {
+                    return group::group;
+                } else {
+                    return group::others;
+                }
+            }
+        }
+
+    }
 };
 
 

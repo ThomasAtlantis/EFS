@@ -39,6 +39,7 @@ private:
     void * curINode;
     Configure configure;
     InstallFlag installFlag;
+    int curUser;
 public:
     OS(vector<string>& diskLocations, bid_t slice):
         _majorDisk(diskLocations[0]),
@@ -58,9 +59,20 @@ public:
         selfInitialize();
         runShell();
     }
+    void setUserSystem() {
+        _fsc->setUserSystem(configure.userNames, configure.userGroup, configure.userCount, curUser);
+        _fsc_share->setUserSystem(configure.userNames, configure.userGroup, configure.userCount, curUser);
+        _fsc_usr->setUserSystem(configure.userNames, configure.userGroup, configure.userCount, curUser);
+    }
     bool selfInitialize() {
         _fsc->_vhdc.readBlock((char *) & configure, _sysPartMin + _CONFIGURE_OFFSET);
+        if (!_fsc_share) _fsc_share = new FSController(_majorDisk, _sysPartMax,
+            _sysPartMax + configure.partSizes[1] - 1, _PARTNAME_SHARE, _SUPERADMIN_NAME);
+        if (!_fsc_usr) _fsc_usr = new FSController(_majorDisk, _sysPartMax + configure.partSizes[1],
+            _sysPartMax + configure.partSizes[1] + configure.partSizes[configure.partCount - 1], _PARTNAME_SYS, _SUPERADMIN_NAME);
         curINode = _fsc->rootINode;
+        curUser = 0;
+        setUserSystem();
         return true;
     }
     int _inputPartSize() {
@@ -140,7 +152,16 @@ public:
         }
         return true;
     }
-
+    bool setUser(string name) {
+        for (int i = 0; i < configure.userCount; ++ i) {
+            if (configure.userNames[i] == name) {
+                curUser = i;
+                setUserSystem();
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 #endif //EFS_OS_H
