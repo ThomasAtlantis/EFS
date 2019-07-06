@@ -7,12 +7,18 @@
 
 #include <io.h>
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <string>
 #include <algorithm>
 #include <cstring>
 #include <map>
 #include <cctype>
+#include <afxres.h>
+#include <cstdlib>
+#include <conio.h>
+#include <fstream>
+#include <sstream>
 
 using std::string;
 using std::vector;
@@ -120,6 +126,5 @@ public:
         return str;
     }
 };
-
 
 #endif //EFS_UTILITIES_H

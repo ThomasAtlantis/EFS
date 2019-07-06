@@ -12,8 +12,6 @@
 #include "..\..\utilities.h"
 #include "..\params.h"
 
-typedef size_t bid_t; // u_int64(unsigned long long int)
-
 class VHDController {
 private:
     string _fileName; // 虚拟磁盘的文件路径
@@ -29,6 +27,7 @@ public:
     explicit VHDController(string fileName, size_t blockSize = _BLOCK_SIZE):
             _fileName(std::move(fileName)), _blockSize(blockSize) {
         _fileStream.open(_fileName.c_str(), std::ios::in | std::ios::out| std::ios::binary);
+        if (!_fileStream.is_open()) throw "Failed to access vhd!";
         // 单独std::ios::out 从头覆盖，文件大小只有最后一次写的大小
         // 加入std::ios::append 文件大小会不断增大
         // std::ios::in| std::ios::out 可以做到修改文件某一块
