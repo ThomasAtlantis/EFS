@@ -134,8 +134,9 @@ public:
         bid_t minBlockID,
         bid_t maxBlockID,
         string partName,
-        string userName):
-        _vhdc(std::move(disk)),
+        string userName,
+        std::fstream &fileStream):
+        _vhdc(std::move(disk), fileStream),
         _minBlockID(minBlockID),
         _maxBlockID(maxBlockID),
         _fbc(_vhdc, minBlockID, maxBlockID),

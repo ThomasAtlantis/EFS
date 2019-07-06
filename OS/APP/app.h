@@ -59,9 +59,8 @@ public:
 
     bool readCommand(){
         char command[40];
-        strcpy(command, "touch hdjhj");
 //        fflush(stdin);
-//        gets(command);
+        gets(command);
         vector<string> vector2 = stringTool1.split(command, " ");//命令行解析
         string pCommand = vector2.at(0);
         int preference = vector2.size()-1;

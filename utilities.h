@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <ctime>
 #include <cctype>
 #include <afxres.h>
 #include <cstdlib>

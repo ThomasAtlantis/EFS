@@ -27,7 +27,8 @@ private:
     const vector<string> & _disk; // 硬盘路径
     const bid_t _sysPartMin, _sysPartMax; // 系统磁盘片的最小块号和最大块号
     const bid_t _sliceSize;       // 系统磁盘片大小（块数）
-    VHDController _vhdc;
+    VHDController * _vhdc;
+    std::fstream * _fileStreamPool;
 
 public:
     typedef FSController::INode INode;
@@ -38,9 +39,15 @@ public:
     VFSController(
         int &curUser, const UserData &userData,
         const vector<string> & disk, const bid_t sysPartMin,
-        const bid_t sysPartMax, const bid_t sliceSize):
-        _curUser(curUser), _userData(userData), _disk(disk), _vhdc(_disk[MAJR]),
-        _sysPartMin(sysPartMin), _sysPartMax(sysPartMax), _sliceSize(sliceSize) {
+        const bid_t sysPartMax, const bid_t sliceSize, std::fstream * fileStreamPool):
+        _curUser(curUser), _userData(userData), _disk(disk),
+        _sysPartMin(sysPartMin), _sysPartMax(sysPartMax),
+        _sliceSize(sliceSize), _fileStreamPool(fileStreamPool) {
+        _fsc.push_back(new FSController(
+            _disk[MAJR], _sysPartMin, _sysPartMin + _INFORMATION_SIZE,
+            _PARTNAME_INFO, _SUPERADMIN_NAME, _fileStreamPool[MAJR])
+        );
+        _vhdc = &_fsc[INF]->_vhdc;
     }
 
     INode * defaultRoot() {
@@ -80,7 +87,7 @@ public:
         app.showPartSize(partSizeUser, _sliceSize);
 
         // 操作系统参数写回硬盘
-        _vhdc.writeBlock((char *) & _partData, _sysPartMin + _PART_DATA_OFFSET);
+        _vhdc->writeBlock((char *) & _partData, _sysPartMin + _PART_DATA_OFFSET);
         _initFSC(); app.over();
         for (int i = 1; i < _partData.partCount; ++ i)
             _fsc[i]->_fbc.formatting();
@@ -100,7 +107,7 @@ public:
             _fsc.push_back(
                 new FSController(_disk[_partData.partDiskN[i]],
                     _partData.partStart[i], _partData.partStart[i] + _partData.partSizes[i],
-                    _partData.partNames[i], _SUPERADMIN_NAME)
+                    _partData.partNames[i], _SUPERADMIN_NAME, _fileStreamPool[_partData.partDiskN[i]])
             );
         }
     }

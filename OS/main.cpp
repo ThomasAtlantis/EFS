@@ -5,7 +5,7 @@ int main(int argc, char * argv[]) {
     vector<string> diskLocations {
         "SLOT_1/data.vhd",
         "SLOT_2/data.vhd",
-        "SLOT_X/data.vhd"
+        "SLOT_X/USB_1/data.vhd"
     };
     bid_t sliceStart = _OS_PART_BLOCK_SIZE;
     #else
@@ -18,7 +18,12 @@ int main(int argc, char * argv[]) {
         else if (!strcmp(argv[i], "-i")) sliceNum = static_cast<bid_t>(std::stol(string(argv[i + 1])));
     }
     #endif
-    OS os(diskLocations, sliceStart, _SLICE_BLOCK_SIZE);
+    try {
+        OS os(diskLocations, sliceStart, _SLICE_BLOCK_SIZE);
+    } catch(const char * e) {
+        cout << e << endl;
+    }
+
 //    从文件加载参数Demo
 //    char x[] = "x = 10\ny = 100\nk = 3.44\nm =  abc\n";
 //    for (const auto &record: stringTool().split(x, sizeof(x), '\n')) {
