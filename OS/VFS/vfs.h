@@ -13,10 +13,9 @@
 #define MAJR 0
 #define VICE 1
 #define PORT 2
-#define INF 0
-#define SYS 1
-#define SHR 2
-#define USR 3
+#define SYS 0
+#define SHR 1
+#define USR 2
 
 class VFSController {
 private:
@@ -43,11 +42,8 @@ public:
         _curUser(curUser), _userData(userData), _disk(disk),
         _sysPartMin(sysPartMin), _sysPartMax(sysPartMax),
         _sliceSize(sliceSize), _fileStreamPool(fileStreamPool) {
-        _fsc.push_back(new FSController(
-            _disk[MAJR], _sysPartMin, _sysPartMin + _INFORMATION_SIZE,
-            _PARTNAME_INFO, _SUPERADMIN_NAME, _fileStreamPool[MAJR])
-        );
-        _vhdc = &_fsc[INF]->_vhdc;
+        _vhdc = new VHDController(_disk[MAJR], _fileStreamPool[MAJR]);
+        _vhdc->readBlock((char *) &_partData, _sysPartMin + _PART_DATA_OFFSET);
     }
 
     INode * defaultRoot() {
@@ -60,8 +56,7 @@ public:
 
         // 分区初始化::系统参数区
         _partData.partCount = 0;
-        bid_t sizePointer = _sysPartMin;
-        _setPart(_PARTNAME_INFO, _INFORMATION_SIZE, MAJR, sizePointer);
+        bid_t sizePointer = _sysPartMin + _INFORMATION_SIZE;
 
         // 分区初始化::系统区
         app.initPartInfo();
@@ -88,9 +83,7 @@ public:
 
         // 操作系统参数写回硬盘
         _vhdc->writeBlock((char *) & _partData, _sysPartMin + _PART_DATA_OFFSET);
-        _initFSC(); app.over();
-        for (int i = 1; i < _partData.partCount; ++ i)
-            _fsc[i]->_fbc.formatting();
+        _initFSC(true); app.over();
     }
 
     void _setPart(const string &name, bid_t size, bid_t diskN, bid_t &sizePointer) {
@@ -98,16 +91,16 @@ public:
         _partData.partStart[_partData.partCount] = sizePointer;
         _partData.partSizes[_partData.partCount] = size;
         _partData.partDiskN[_partData.partCount] = diskN;
-        sizePointer += _partData.partSizes[_partData.partCount];
+        sizePointer += (_partData.partSizes[_partData.partCount]);
         _partData.partCount ++;
     }
 
-    void _initFSC() {
-        for (int i = 1; i < _partData.partCount; ++ i) {
+    void _initFSC(bool formatFlag=false) {
+        for (int i = 0; i < _partData.partCount; ++ i) {
             _fsc.push_back(
                 new FSController(_disk[_partData.partDiskN[i]],
-                    _partData.partStart[i], _partData.partStart[i] + _partData.partSizes[i],
-                    _partData.partNames[i], _SUPERADMIN_NAME, _fileStreamPool[_partData.partDiskN[i]])
+                    _partData.partStart[i], _partData.partStart[i] + _partData.partSizes[i] - 1,
+                    _partData.partNames[i], _SUPERADMIN_NAME, _fileStreamPool[_partData.partDiskN[i]], formatFlag)
             );
         }
     }

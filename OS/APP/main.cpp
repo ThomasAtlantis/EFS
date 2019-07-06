@@ -3,7 +3,7 @@
 #include "../../utilities.h"
 #include "app.h"
 #include <cstdio>
-#include "light.h"
+#include "screen.h"
 
 
 int main(int argc, char * argv[]){

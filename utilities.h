@@ -15,7 +15,6 @@
 #include <map>
 #include <ctime>
 #include <cctype>
-#include <afxres.h>
 #include <cstdlib>
 #include <conio.h>
 #include <fstream>

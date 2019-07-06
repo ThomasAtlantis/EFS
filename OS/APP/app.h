@@ -6,47 +6,32 @@
 
 #include "../../utilities.h"
 #include "../VFS/vfs.h"
-#include "light.h"
-
-using std::ifstream;
-using std::ofstream;
+#include "screen.h"
 
 #define DEBUG 1
 
+using std::ifstream;
+using std::ofstream;
 class VFSController;
 
 class App {
 
 private:
-    string fileName;
-
     VFSController * _vfs;
     FSController::INode* curINode;
-
-
-    //fsc::INode =
-    //fsc.newINode();
-
-    Light light;
-
+    Screen _screen;
     string rootDir = "root@USER root";
     string startSymble = "$";
-
-    map<string, string> users;
-
     FileTool fileTool;
     stringTool stringTool1;
-
     string testDirectory = "../VirtualMachine";
+    vector<string> _helpDoc;
 
 public:
     App() {
-        initUser();
         string str = "--------Welcome!--------";
-        light.cprintf((char*)str.data(), 10);
+        _screen.cprintf((char*)str.data(), FOREGROUND_RED | FOREGROUND_GREEN);
         cout << endl;
-        //loginSystem();
-        //InitUser();
     }
     ~App(){}
 
@@ -136,29 +121,29 @@ public:
         }else if(pCommand == "mv"){
 
         }else if(pCommand == "userdel"){  //删除用户
-            if(preference == 1){
-                map<string, string>::iterator it = users.find(vector2.at(1));
-                if(it == users.end()){
-                    cout << "no user" << endl;
-                }else{
-                    users.erase(vector2.at(1));
-                    cout << "delete successfully" << endl;
-                }
-            }else{
-                cout << "-f：强制删除用户，即使用户当前已登录；" << endl;
-                cout << "-r：删除用户的同时，删除与用户相关的所有文件。" << endl;
-            }
+//            if(preference == 1){
+//                map<string, string>::iterator it = users.find(vector2.at(1));
+//                if(it == users.end()){
+//                    cout << "no user" << endl;
+//                }else{
+//                    users.erase(vector2.at(1));
+//                    cout << "delete successfully" << endl;
+//                }
+//            }else{
+//                cout << "-f：强制删除用户，即使用户当前已登录；" << endl;
+//                cout << "-r：删除用户的同时，删除与用户相关的所有文件。" << endl;
+//            }
         }else if(pCommand == "useradd"){    //添加用户
-            string str1 = vector2.at(1);
-            if( ! str1.substr(1, 1).compare("c") ){//useradd -c<password> username
-                string str = vector2.at(1);
-                int index = str.find('<');
-                int index1 = str.find('>');
-                users.insert(std::pair<string, string>(vector2.at(2), str.substr(index+1, index1-index-1)));
-                cout << "add successfully" << endl;
-            }else{
-                cout << "TODO" << endl;
-            }
+//            string str1 = vector2.at(1);
+//            if( ! str1.substr(1, 1).compare("c") ){//useradd -c<password> username
+//                string str = vector2.at(1);
+//                int index = str.find('<');
+//                int index1 = str.find('>');
+//                users.insert(std::pair<string, string>(vector2.at(2), str.substr(index+1, index1-index-1)));
+//                cout << "add successfully" << endl;
+//            }else{
+//                cout << "TODO" << endl;
+//            }
         }else if(pCommand == "passwd"){
 
         }else if(pCommand == "su"){
@@ -226,67 +211,38 @@ public:
         }
     }
 
-    bool openCommandFile(string commond){
-        PROCESS_INFORMATION ProcessInfo;
-        STARTUPINFO StartupInfo; //This is an [in] parameter。创建新进程时，它将使用该结构的有关成员
-        ZeroMemory(&StartupInfo, sizeof(StartupInfo));//将该结构中的所有成员初始化为零
-        StartupInfo.cb = sizeof StartupInfo ; //Only compulsory field。用作版本控制手段
-        vector<string> vector1 = fileTool.dir(testDirectory);
-        for (const auto &files: vector1) {
-            if (FileTool().ext1(files) == commond) {
-                fileName = files;
-                break;
-            }
-        }
-        string str = testDirectory + fileName;
-        if(CreateProcess( str.c_str(), NULL, NULL,NULL,FALSE,0,NULL, NULL,&StartupInfo,&ProcessInfo))
-        {
-            WaitForSingleObject(ProcessInfo.hProcess,INFINITE);
-            CloseHandle(ProcessInfo.hThread);
-            CloseHandle(ProcessInfo.hProcess);
-        }
-//        else
-//            MessageBox(NULL,"The process could not be started",NULL,NULL);
-        return true;
-    };
-
     void loginSystem(){
-        map<string, string> ::iterator it;
-        while(1){
-            string userName;
-            cout << "login: ";
-            #if DEBUG
-            userName = "USER";
-            #else
-            cin >> userName;
-            #endif
-            it = users.find(userName);
-            if(it == users.end()){
-                cout << "no this user" << endl;
-                continue;
-            }
-            break;
-        }
-        while(1){
-            string userPassword;
-            cout << "Password: ";
-            #if DEBUG
-            userPassword = "123456";
-            #else
-            userPassword = getPasswordWithoutPlainData();
-            #endif
-            if(it->second != userPassword){
-                cout << "your password is error, please input again" << endl;
-                continue;
-            }
-            system("cls");
-            break;
-        }
-    }
-
-    void initUser(){
-        users.insert(std::pair<string, string>("USER", "123456"));
-        //cout << "init successfully";
+//        map<string, string> ::iterator it;
+//        while(1){
+//            string userName;
+//            cout << "login: ";
+//            #if DEBUG
+//            userName = "USER";
+//            #else
+//            cin >> userName;
+//            #endif
+//            it = users.find(userName);
+//            if(it == users.end()){
+//                cout << "no this user" << endl;
+//                continue;
+//            }
+//            break;
+//        }
+//        while(1){
+//            string userPassword;
+//            cout << "Password: ";
+//            #if DEBUG
+//            userPassword = "123456";
+//            #else
+//            userPassword = getPasswordWithoutPlainData();
+//            #endif
+//            if(it->second != userPassword){
+//                cout << "your password is error, please input again" << endl;
+//                continue;
+//            }
+//            system("cls");
+//            break;
+//        }
     }
 
     string getPasswordWithoutPlainData()
@@ -332,8 +288,8 @@ public:
     };
 
     bool run() {
-        freopen("data.in", "r", stdin);
-        freopen("data.out", "w", stdout);
+//        freopen("data.in", "r", stdin);
+//        freopen("data.out", "w", stdout);
         loginSystem();
         while (true) {
             cout << "root@USER root/ " << endl;
@@ -368,8 +324,7 @@ public:
         cout << "" << endl;
     };
 
-    // For OS installation
-
+    // From here below: for OS installation
     bid_t inputPartSize(const bid_t &_sliceSize) {
         string text = inputText();
         auto sysSize = static_cast<bid_t>(std::stoi(text));
@@ -381,7 +336,6 @@ public:
         showPartSize(sysSize, _sliceSize);
         return sysSize;
     }
-
     void showPartSize(const bid_t &sysSize, const bid_t &_sliceSize) {
         for (int i = 0; i < std::to_string(_sliceSize).length()
             - std::to_string(sysSize).length() + 4; ++ i) cout << " ";
@@ -390,7 +344,6 @@ public:
             cout << "-";
         cout << "]" << endl;
     }
-
     string initPassword() {
         cout << "Initialize user system ... " << endl;
         cout << "Initial super user: " << _SUPERADMIN_NAME << endl;
@@ -416,16 +369,13 @@ public:
         #endif
         return password;
     }
-
     void showTotalSize(bid_t sliceSize) {
         cout << "Total size of major disk: " << sliceSize
              << " * " << _BLOCK_SIZE << " Bytes" << endl;
     }
-
     void initPartInfo() {
         cout << "Initialize disk partition ... " << endl;
     }
-
     void showPartInfo(const string &partName, bid_t partSize = 0) {
         cout << ">> " << std::left << std::setw(_FILENAME_MAXLEN)
              << partName << "| block size: ";

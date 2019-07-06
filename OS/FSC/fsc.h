@@ -135,13 +135,20 @@ public:
         bid_t maxBlockID,
         string partName,
         string userName,
-        std::fstream &fileStream):
+        std::fstream &fileStream,
+        bool formatFlag=false):
         _vhdc(std::move(disk), fileStream),
         _minBlockID(minBlockID),
         _maxBlockID(maxBlockID),
         _fbc(_vhdc, minBlockID, maxBlockID),
-        partition(std::move(partName)) {
-        rootINode = createRootDir(partName, userName);
+        partition(partName) {
+        if (formatFlag) {
+            _fbc.formatting();
+            rootINode = createRootDir(partName, userName);
+        } else {
+            rootINode = newINode();
+            _vhdc.readBlock((char *) rootINode, _maxBlockID);
+        }
     }
 
     /**
@@ -410,18 +417,14 @@ public:
         dirINode->mode[group::group] = mode::total;
         dirINode->mode[group::others] = mode::total;
         strcpy(dirINode->owner,curUser.c_str());
-        if(!_fbc.distribute(dirINode->bid))
-        {
-            std::cout<<"distribute unsuccessfully"<<endl;
-            return nullptr;
-        }
+        _fbc.distribute(dirINode->bid);
         dirINode->parentDir = _minBlockID;
         bid_t num;
         _fbc.distribute(num);
         push(*dirINode,num);
         DirBlock * dirBlock = newDirBlock();
-        _vhdc.writeBlock((char *) dirBlock ,num);
-        _vhdc.writeBlock((char *) dirINode,dirINode->bid);
+        _vhdc.writeBlock((char *) dirBlock, num);
+        _vhdc.writeBlock((char *) dirINode, dirINode->bid);
         return dirINode;
     }
 
