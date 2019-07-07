@@ -5,7 +5,6 @@
 #pragma once
 
 #include "../FSC/fsc.h"
-#include "../APP/app.h"
 #include "../error.h"
 #include "../user.h"
 #include "part.h"
@@ -16,6 +15,7 @@
 #define SYS 0
 #define SHR 1
 #define USR 2
+#define DEBUG 1
 
 class VFSController {
 private:
@@ -50,7 +50,7 @@ public:
         return _fsc[USR]->rootINode;
     }
 
-    void install(App &app) {
+    void install() {
         // 硬盘初始化
         _partData.diskCount = static_cast<int>(_disk.size());
 
@@ -59,31 +59,31 @@ public:
         bid_t sizePointer = _sysPartMin + _INFORMATION_SIZE;
 
         // 分区初始化::系统区
-        app.initPartInfo();
-        app.showTotalSize(_sliceSize);
-        app.showPartInfo(_PARTNAME_SYS, _PARTSIZE_SYS);
+        initPartInfo();
+        showTotalSize(_sliceSize);
+        showPartInfo(_PARTNAME_SYS, _PARTSIZE_SYS);
         _setPart(_PARTNAME_SYS, _PARTSIZE_SYS, MAJR, sizePointer);
-        app.showPartSize(_PARTSIZE_SYS, _sliceSize);
+        showPartSize(_PARTSIZE_SYS, _sliceSize);
 
         // 分区初始化::共享区
-        app.showPartInfo(_PARTNAME_SHARE);
+        showPartInfo(_PARTNAME_SHARE);
         #if DEBUG
         bid_t partSizeShare = 1024;
         #else
-        bid_t partSizeShare = app.inputPartSize(_sliceSize);
+        bid_t partSizeShare = inputPartSize(_sliceSize);
         #endif
         _setPart(_PARTNAME_SHARE, partSizeShare, MAJR, sizePointer);
-        app.showPartSize(partSizeShare, _sliceSize);
+        showPartSize(partSizeShare, _sliceSize);
 
         // 分区初始化::用户区
         bid_t partSizeUser = _sliceSize - _PARTSIZE_SYS - partSizeShare;
-        app.showPartInfo(_PARTNAME_USER, partSizeUser);
+        showPartInfo(_PARTNAME_USER, partSizeUser);
         _setPart(_PARTNAME_USER, partSizeUser, MAJR, sizePointer);
-        app.showPartSize(partSizeUser, _sliceSize);
+        showPartSize(partSizeUser, _sliceSize);
 
         // 操作系统参数写回硬盘
         _vhdc->writeBlock((char *) & _partData, _sysPartMin + _PART_DATA_OFFSET);
-        _initFSC(true); app.over();
+        _initFSC(true); cout << "done" << endl << endl;
     }
 
     void _setPart(const string &name, bid_t size, bid_t diskN, bid_t &sizePointer) {
@@ -176,5 +176,56 @@ public:
 
     string curUserName() {
         return string(_userData.userNames[_curUser]);
+    }
+
+    // 一些GUI界面，本应在APP类中，但产生了互相依赖
+    // 此处应该使用依赖倒转，APP类单向调用VFS，时间不够先凑活一下
+    void showTotalSize(bid_t sliceSize) {
+        cout << "Total size of major disk: " << sliceSize
+             << " * " << _BLOCK_SIZE << " Bytes" << endl;
+    }
+    void initPartInfo() {
+        cout << "Initialize disk partition ... " << endl;
+    }
+    void showPartInfo(const string &partName, bid_t partSize = 0) {
+        cout << ">> " << std::left << std::setw(_FILENAME_MAXLEN)
+             << partName << "| block size: ";
+        if (partSize != 0) cout << partSize;
+    }
+    void showPartSize(const bid_t &sysSize, const bid_t &_sliceSize) {
+        for (int i = 0; i < std::to_string(_sliceSize).length()
+                            - std::to_string(sysSize).length() + 4; ++ i) cout << " ";
+        cout << "[";
+        for (int i = 0; i < sysSize * 20 / _sliceSize; ++ i)
+            cout << "-";
+        cout << "]" << endl;
+    }
+    string inputText(char limit = 'N') {
+        int ch; string text {};
+        while (true) {
+            ch = _getch();
+            if (ch == '\b') {
+                if (text.length() > 0) {
+                    text = text.substr(0, text.length() - 1);
+                    cout << "\b \b";
+                }
+            } else if (ch == '\r') {
+                return text;
+            } else if (limit == 'N' && ch <= '9' && ch >= '0') {
+                text += static_cast<char>(ch);
+                cout << static_cast<char>(ch);
+            }
+        }
+    }
+    bid_t inputPartSize(const bid_t &_sliceSize) {
+        string text = inputText();
+        auto sysSize = static_cast<bid_t>(std::stoi(text));
+        while (sysSize <= 0 || sysSize > _sliceSize) {
+            for (int i = 0; i < text.length(); ++ i) cout << "\b \b";
+            text = inputText();
+            sysSize = static_cast<bid_t>(std::stoi(text));
+        }
+        showPartSize(sysSize, _sliceSize);
+        return sysSize;
     }
 };

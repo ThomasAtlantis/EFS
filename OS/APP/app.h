@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <utility>
 #include "../../utilities.h"
 #include "../VFS/vfs.h"
 #include "screen.h"
@@ -12,158 +13,94 @@
 
 using std::ifstream;
 using std::ofstream;
-class VFSController;
 
 class App {
 
 private:
-    VFSController * _vfs;
-    FSController::INode* curINode;
+    typedef FSController::INode INode;
+    typedef struct {
+        string helpDoc;
+        bool (App::*func)(vector<string>&);
+    } Command;
+    VFSController &_vfs; // 虚拟文件系统
+    INode * _curINode;
     Screen _screen;
-    string rootDir = "root@USER root";
-    string startSymble = "$";
-    FileTool fileTool;
-    stringTool stringTool1;
-    string testDirectory = "../VirtualMachine";
-    vector<string> _helpDoc;
+    string _curPath = "~";
+    string _symbol = "#";
+    string _machineName = "@VirtualMachine";
+    map<string, Command> _cmds;
+    string _cmdLine;
 
 public:
-    App() {
-        string str = "--------Welcome!--------";
-        _screen.cprintf((char*)str.data(), FOREGROUND_RED | FOREGROUND_GREEN);
-        cout << endl;
-    }
-    ~App(){}
-
-    vector<string> getRootDir(){
-        vector<string> vector1;
-        vector1.push_back(rootDir);
-        vector1.push_back(startSymble);
-        return vector1;
+    App(VFSController &vfs): _vfs(vfs) {
+        bind("help", help, "help: help <command>\n    Display information about builtin commands.");
+        bind("touch", touch, "touch: touch <filename>\n    Create a new empty file.");
     }
 
-    bool readCommand(){
-        char command[40];
-//        fflush(stdin);
-        gets(command);
-        vector<string> vector2 = stringTool1.split(command, " ");//命令行解析
-        string pCommand = vector2.at(0);
-        int preference = vector2.size()-1;
-        if(pCommand == "touch"){ //创建文件
+    bool run() {
+//        freopen("data.in", "r", stdin);
+//        freopen("data.out", "w", stdout);
+        login();
+        do {
+            commandTip();
+        } while (readCommand());
+        return true;
+    }
 
-        }
-        if(pCommand == "ls"){//列出目录
-            vector<FSController::INode*> vector3;
-            //= _fsc->listDir(*curINode);
-            if(preference == 0){ //当前目录非隐藏目录
-                int flag = 0;
-                for (auto iNode: vector3) {
-                    string str = iNode->name;
-                    cout << std::setw(20) << std::setiosflags(std::ios::left) << str;
-                    flag++;
-                }
-                if(flag%3 == 0) cout << endl;
-                cout << endl;
-            }else if(preference == 1){ //显示当前目录所有文件（包括隐藏的）
-                if(vector2[1] == "-a"){
-                    cout << "Show all files and directories" << endl;
-                }
-            }else if(preference == 2){ //查看文件的时间属性
-                if(vector2[1] == "-l"){
-                    for (auto iNode: vector3) {
-                        cout << std::tolower(iNode->type);
-                        for (char i : iNode->mode) {
-                            cout << (i & mode::read) ? "r": "-";
-                            cout << (i & mode::write) ? "w": "-";
-                            cout << (i & mode::exec) ? "x": "-";
-                        }
-                        cout << " ";
-                        if (strlen(iNode->owner) > 6) cout << string(iNode->owner).substr(0, 6);
-                        else cout << std::setw(6) << iNode->owner;
-                        cout << " ";
-                        std::stringstream ss;
-                        ss << std::put_time(std::localtime(&iNode->ctime), "%Y-%m-%d %H:%M ") << endl;
-                        cout << iNode->name << endl;
-                    }
-                }
+    void commandTip() {
+        _screen.cprintf(_vfs.curUserName().c_str(), FOREGROUND_GREEN| FOREGROUND_INTENSITY);
+        cout << _machineName << ":" << _curPath << _symbol << " ";
+    }
+
+    void bind(const string &cmdName, bool (App::*func)(vector<string>&), string helpDoc="") {
+        Command cmd {std::move(helpDoc), func};
+        _cmds[cmdName] = cmd;
+    }
+
+    bool readCommand() {
+        fflush(stdin);
+        getline(cin, _cmdLine);
+        vector<string> cmdParam = stringTool().split(_cmdLine, " ");
+        string cmdName = cmdParam[0];
+        cmdParam.erase(cmdParam.begin());
+        if (cmdName == "exit") return false;
+        auto it = _cmds.find(cmdName);
+        if (it == _cmds.end())
+            cout << cmdName << ": command not found" << endl;
+        else (this->*(it->second.func))(cmdParam);
+        return true;
+    }
+
+    bool login() {
+        cout << "login as: ";
+        string userName, password;
+        cin >> userName;
+//        if (!_vfs.existUser(userName)) return false;
+        cout << userName << _machineName << "'s password: ";
+        cin >> password;
+//        if (!_vfs.match(userName, password)) return false;
+        cout << "Last login: " << endl;
+        cout << "Welcome to VirtualMachine X!" << endl;
+        return true;
+    }
+
+    bool touch(vector<string> &param) {
+        return true;
+    }
+
+    bool help(vector<string> &cmd) {
+        if (cmd.empty()) {
+            for (auto x: _cmds) {
+                cout << x.second.helpDoc << endl;
             }
-        }else if(pCommand == "ll"){
-
-        }else if(pCommand == "cd"){
-            if(preference == 1){
-                //cout << vector2[1] << endl;
-                if(vector2[1] == ".."){
-                    vector<string> vector1 = stringTool1.split(rootDir, "/");
-                    if(vector1.size() == 1){
-                        cout << "arrive at root dirctory already" << endl;
-                    } else{
-                        rootDir = vector1.at(0);
-                        for(int i=1; i<vector1.size()-1; i++){
-                            rootDir += "/" + vector1.at(i);
-                        }
-                    }
-                }else{
-                    rootDir += "/" + vector2[1];
-                }
+        } else {
+            auto it = _cmds.find(cmd[0]);
+            if (it == _cmds.end()) {
+                cout << "help: no help topics match " << cmd[0] << " ." << endl;
+                return false;
+            } else {
+                cout << it->second.helpDoc << endl;
             }
-        }else if(pCommand == ""){
-
-        }else if(pCommand == "read"){
-            cout << "TODO:读文件 " << endl;
-        }else if(pCommand == "write"){
-            cout << "TODO:写文件" << endl;
-        }else if(pCommand == "vi"){
-
-        }else if(pCommand == "rm"){
-
-        }else if(pCommand == "chmodv"){
-
-        }else if(pCommand == "mv"){
-
-        }else if(pCommand == "userdel"){  //删除用户
-//            if(preference == 1){
-//                map<string, string>::iterator it = users.find(vector2.at(1));
-//                if(it == users.end()){
-//                    cout << "no user" << endl;
-//                }else{
-//                    users.erase(vector2.at(1));
-//                    cout << "delete successfully" << endl;
-//                }
-//            }else{
-//                cout << "-f：强制删除用户，即使用户当前已登录；" << endl;
-//                cout << "-r：删除用户的同时，删除与用户相关的所有文件。" << endl;
-//            }
-        }else if(pCommand == "useradd"){    //添加用户
-//            string str1 = vector2.at(1);
-//            if( ! str1.substr(1, 1).compare("c") ){//useradd -c<password> username
-//                string str = vector2.at(1);
-//                int index = str.find('<');
-//                int index1 = str.find('>');
-//                users.insert(std::pair<string, string>(vector2.at(2), str.substr(index+1, index1-index-1)));
-//                cout << "add successfully" << endl;
-//            }else{
-//                cout << "TODO" << endl;
-//            }
-        }else if(pCommand == "passwd"){
-
-        }else if(pCommand == "su"){
-
-        }else if(pCommand == "format"){
-
-        }else if(pCommand == "echo"){
-
-        }else if(pCommand == "cat"){
-
-        }else if(pCommand == "clear"){
-
-        }else if(pCommand == "exit"){
-            exit(0);
-        }else if(pCommand == "help"){
-
-        }else if(pCommand == "clear"){
-            system("cls");
-        }else{
-            cout << "not found command" << endl;
         }
         return true;
     };
@@ -191,194 +128,5 @@ public:
             }
         }
         return string(password);
-    }
-
-    string inputText(char limit = 'N') {
-        int ch; string text {};
-        while (true) {
-            ch = _getch();
-            if (ch == '\b') {
-                if (text.length() > 0) {
-                    text = text.substr(0, text.length() - 1);
-                    cout << "\b \b";
-                }
-            } else if (ch == '\r') {
-                return text;
-            } else if (limit == 'N' && ch <= '9' && ch >= '0') {
-                text += static_cast<char>(ch);
-                cout << static_cast<char>(ch);
-            }
-        }
-    }
-
-    void loginSystem(){
-//        map<string, string> ::iterator it;
-//        while(1){
-//            string userName;
-//            cout << "login: ";
-//            #if DEBUG
-//            userName = "USER";
-//            #else
-//            cin >> userName;
-//            #endif
-//            it = users.find(userName);
-//            if(it == users.end()){
-//                cout << "no this user" << endl;
-//                continue;
-//            }
-//            break;
-//        }
-//        while(1){
-//            string userPassword;
-//            cout << "Password: ";
-//            #if DEBUG
-//            userPassword = "123456";
-//            #else
-//            userPassword = getPasswordWithoutPlainData();
-//            #endif
-//            if(it->second != userPassword){
-//                cout << "your password is error, please input again" << endl;
-//                continue;
-//            }
-//            system("cls");
-//            break;
-//        }
-    }
-
-    string getPasswordWithoutPlainData()
-    {
-        string ret;
-        char ch;
-        ch = _getch();
-        while (ch != '\n' && ch != '\r')
-        {
-            ret += ch;
-            //cout << "debug:" << ret << endl;
-            ch = _getch();
-        }
-        return ret;
-    }
-
-    void writeFile(string filename){
-        ofstream outfile(filename, std::ios::trunc);
-        char context[256];
-        fflush(stdin);
-        gets(context);
-        //将数据输出至out.txt文件中
-        for (int i = 0; i < 100; i++)
-        {
-            outfile << context[i] << endl;
-        }
-        outfile.close();
-    };
-
-    void readFile(string fileName){
-        ifstream myfile(fileName);
-        char buffer[256];
-        if (!myfile.is_open())
-        {
-            cout << "can not open this file" << endl;
-            return ;
-        }
-        while (! myfile.eof() ) {
-            myfile.getline(buffer,100);
-            cout << buffer << endl;
-        }
-        myfile.close();
-    };
-
-    bool run() {
-//        freopen("data.in", "r", stdin);
-//        freopen("data.out", "w", stdout);
-        loginSystem();
-        while (true) {
-            cout << "root@USER root/ " << endl;
-            cout << "$ ";
-            if (!readCommand()) break;
-            cout << endl;
-        }
-        return true;
-    }
-
-    void over() {
-        cout << "done!" << endl << endl;
-    }
-
-    void help(){
-        cout << "ls [-a] [-l filename]" << endl; //列出目录
-        cout << "ll" << endl; //列出当前详细目录
-        cout << "cd [..] [filename]" <<endl; //目录切换
-        cout << "touch <filename>" << endl; //创建文件
-        cout << "read <filename>" << endl; //读文件
-        cout << "write <filename>" << endl; //写文件
-        cout << "vi <filename> " << endl; //打开文件
-        cout << "rm  [-r] <filename>" << endl; //删除文件
-        cout << "mv <filename> <filename>" << endl; //移动文件
-        cout << "userdel <username>" << endl; //删除用户
-        cout << "useradd <username>" << endl; //添加用户
-        cout << "passwd [-d] [-S] <username>" << endl; //修改密码
-        cout << "su <username>" << endl; //变更为其他使用者的身份
-        cout << "fomat" << endl; //格式化
-        cout << "" << endl;
-        cout << "" << endl;
-        cout << "" << endl;
-    };
-
-    // From here below: for OS installation
-    bid_t inputPartSize(const bid_t &_sliceSize) {
-        string text = inputText();
-        auto sysSize = static_cast<bid_t>(std::stoi(text));
-        while (sysSize <= 0 || sysSize > _sliceSize) {
-            for (int i = 0; i < text.length(); ++ i) cout << "\b \b";
-            text = inputText();
-            sysSize = static_cast<bid_t>(std::stoi(text));
-        }
-        showPartSize(sysSize, _sliceSize);
-        return sysSize;
-    }
-    void showPartSize(const bid_t &sysSize, const bid_t &_sliceSize) {
-        for (int i = 0; i < std::to_string(_sliceSize).length()
-            - std::to_string(sysSize).length() + 4; ++ i) cout << " ";
-        cout << "[";
-        for (int i = 0; i < sysSize * 20 / _sliceSize; ++ i)
-            cout << "-";
-        cout << "]" << endl;
-    }
-    string initPassword() {
-        cout << "Initialize user system ... " << endl;
-        cout << "Initial super user: " << _SUPERADMIN_NAME << endl;
-        cout << ">> Initial password: ";
-        #if DEBUG
-        string password = "123456";
-        #else
-        int failCount = 0;
-        string password = _inputPassword();
-        while (true) {
-            cout << ">> Repeat password: ";
-            string repeat = _inputPassword();
-            if (repeat == password) break;
-            else {
-                cout << "Wrong Repetition!" << endl;
-                if (failCount ++ == 3) {
-                    cout << "rollback ... " << endl;
-                    cout << ">> Initial password: ";
-                    password = _inputPassword();
-                }
-            }
-        }
-        #endif
-        return password;
-    }
-    void showTotalSize(bid_t sliceSize) {
-        cout << "Total size of major disk: " << sliceSize
-             << " * " << _BLOCK_SIZE << " Bytes" << endl;
-    }
-    void initPartInfo() {
-        cout << "Initialize disk partition ... " << endl;
-    }
-    void showPartInfo(const string &partName, bid_t partSize = 0) {
-        cout << ">> " << std::left << std::setw(_FILENAME_MAXLEN)
-             << partName << "| block size: ";
-        if (partSize != 0) cout << partSize;
     }
 };

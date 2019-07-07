@@ -11,6 +11,7 @@
 #define USER_DATA_PADDING (_BLOCK_SIZE \
     - sizeof(int) * 1 - _MAX_USERS * (_USERNAME_MAXLEN + _PASSWORD_LENGTH + 1))
 
+#pragma pack(1)
 typedef struct {
 
     // 用户信息表：sizeof(int) * 1 + _MAX_USERS * (_USERNAME_MAXLEN + _PASSWORD_LENGTH + 1)
@@ -22,5 +23,6 @@ typedef struct {
     // 填充
     char padding[USER_DATA_PADDING];
 } UserData; // 系统参数
+#pragma pack()
 
 #endif //EFS_USER_H

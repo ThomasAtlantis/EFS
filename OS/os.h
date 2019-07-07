@@ -25,7 +25,7 @@ private:
     bid_t _sysPartMin, _sysPartMax; // 系统磁盘片的最小块号和最大块号
     bid_t _sliceSize;       // 系统磁盘片大小（块数）
     VHDController * _vhdc;  // 读写OS配置信息的工具
-    App _cli;               // 控制台用户界面
+    App * _cli;             // 控制台用户界面
     vector<string> _disk;   // 虚拟硬盘路径
     VFSController * _vfs;   // 虚拟文件系统
 
@@ -58,7 +58,7 @@ public:
         _disk.insert(_disk.begin(), all(diskLocations));
         _vhdc->readBlock((char *) & installFlag, _sysPartMin + _INSTALL_FLAG_OFFSET);    // 读取安装标志
         if (!installFlag.installed) selfInstall(); else initialize();  // 如果系统未安装，安装系统
-        _cli.run();
+        _cli = new App(*_vfs); _cli->run();
     }
     ~OS() {
         for (auto &fileStream: _fileStreamPool) {
@@ -76,22 +76,47 @@ public:
     bool selfInstall() {
         // 用户初始化::超级管理员
         userData.userCount = 0;
-        string password = _cli.initPassword();
+        string password = initPassword();
         strcpy(userData.userNames[userData.userCount], _SUPERADMIN_NAME);
         strcpy(userData.passwords[userData.userCount], password.c_str());
         userData.userGroup[userData.userCount ++] = 0;
         _vhdc->writeBlock((char *) & userData, _sysPartMin + _USER_DATA_OFFSET);
-        _cli.over();
+        cout << endl << endl;
 
         // 分区初始化
         curUser = SU;
         _vfs = new VFSController(curUser, userData, _disk, _sysPartMin, _sysPartMax, _sliceSize, _fileStreamPool);
-        _vfs->install(_cli); curINode = _vfs->defaultRoot();
+        _vfs->install(); curINode = _vfs->defaultRoot();
 
         // 改写安装标志位
         installFlag.installed = true;
         _vhdc->writeBlock((char *) & installFlag, _sysPartMin + _INSTALL_FLAG_OFFSET);
         return true;
+    }
+    string initPassword() {
+        cout << "Initialize user system ... " << endl;
+        cout << "Initial super user: " << _SUPERADMIN_NAME << endl;
+        cout << ">> Initial password: ";
+        #if DEBUG
+        string password = "123456";
+        #else
+        int failCount = 0;
+        string password = _inputPassword();
+        while (true) {
+            cout << ">> Repeat password: ";
+            string repeat = _inputPassword();
+            if (repeat == password) break;
+            else {
+                cout << "Wrong Repetition!" << endl;
+                if (failCount ++ == 3) {
+                    cout << "rollback ... " << endl;
+                    cout << ">> Initial password: ";
+                    password = _inputPassword();
+                }
+            }
+        }
+        #endif
+        return password;
     }
 };
 

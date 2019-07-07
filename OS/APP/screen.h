@@ -11,7 +11,9 @@
 class Screen {
 public:
     Screen(){}
-    void cprintf(char* str, WORD color, ...) {
+    // Demo:
+    // _screen.cprintf((char*)str.data(), FOREGROUND_RED | FOREGROUND_GREEN);
+    void cprintf(const char* str, WORD color, ...) {
         WORD colorOld;
         HANDLE handle = ::GetStdHandle(STD_OUTPUT_HANDLE);
         CONSOLE_SCREEN_BUFFER_INFO csbi;

@@ -13,6 +13,7 @@
     - sizeof(bid_t) * (_MAX_PARTITIONS * 3 + 1) \
     - _MAX_PARTITIONS * _FILENAME_MAXLEN)
 
+#pragma pack(1)
 typedef struct {
     int diskCount; // 硬盘数量
     bid_t partCount; // 分区数量
@@ -22,5 +23,6 @@ typedef struct {
     char partNames[_MAX_PARTITIONS][_FILENAME_MAXLEN]; // 各分区名
     char padding[PART_DATA_PADDING];
 } PartData;
+#pragma pack()
 
 #endif //EFS_PART_H
