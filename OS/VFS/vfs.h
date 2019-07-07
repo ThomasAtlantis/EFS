@@ -22,7 +22,7 @@ private:
     int & _curUser; // 当前用户
     vector<FSController *> _fsc; // 文件系统列表
     PartData _partData; // 分区信息
-    const UserData &_userData;
+    UserData &_userData;
     const vector<string> & _disk; // 硬盘路径
     const bid_t _sysPartMin, _sysPartMax; // 系统磁盘片的最小块号和最大块号
     const bid_t _sliceSize;       // 系统磁盘片大小（块数）
@@ -36,7 +36,7 @@ public:
     int curPart; // 当前分区
 
     VFSController(
-        int &curUser, const UserData &userData,
+        int &curUser, UserData &userData,
         const vector<string> & disk, const bid_t sysPartMin,
         const bid_t sysPartMax, const bid_t sliceSize, std::fstream * fileStreamPool):
         _curUser(curUser), _userData(userData), _disk(disk),
@@ -44,10 +44,11 @@ public:
         _sliceSize(sliceSize), _fileStreamPool(fileStreamPool) {
         _vhdc = new VHDController(_disk[MAJR], _fileStreamPool[MAJR]);
         _vhdc->readBlock((char *) &_partData, _sysPartMin + _PART_DATA_OFFSET);
+        curPart = USR;
     }
 
-    INode * defaultRoot() {
-        return _fsc[USR]->rootINode;
+    void setDefaultCurINode() {
+        curINode = _fsc[USR]->rootINode;
     }
 
     void install() {
@@ -105,14 +106,28 @@ public:
         }
     }
 
+    void updateLoginTime() {
+        _userData.loginTime = time(nullptr);
+    }
+
+    string getLoginTime() {
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&_userData.loginTime), "%Y-%m-%d %H:%M ");
+        return ss.str();
+    }
+
+    void saveInfo() {
+        _vhdc->writeBlock((char *) &_userData, _sysPartMin + _USER_DATA_OFFSET);
+        _vhdc->writeBlock((char *) &_partData, _sysPartMin + _PART_DATA_OFFSET);
+    }
+
     /**
      * 解析路径，分发到子文件系统
      * @param path 路径名
      * @return -1：cannot access; 子系统编号; -2: curINode
      */
     int parsePart(string &path) {
-        if (path.empty()) return -1;
-        if (path[0] == '/') {
+        if (!path.empty() && path[0] == '/') {
             size_t index = path.find('/', 1);
             string partName = path.substr(0, index - 1);
             for (int i = 0; i < _partData.partCount; ++ i) {
@@ -143,14 +158,26 @@ public:
         return _fsc[partNum]->parsePath(iNode, fileName);
     }
 
-    INode * createFile(Error &e, string fileName, string curUser) {
+    INode * createFile(string fileName, string curUser) {
         size_t index = fileName.rfind('/');
-        string path = fileName.substr(0, index);
-        fileName = fileName.substr(index + 1, fileName.length() - index - 1);
+        string path;
+        if (index == string::npos) {
+            path = "";
+        } else {
+            path = fileName.substr(0, index);
+            fileName = fileName.substr(index + 1, fileName.length() - index - 1);
+        }
         int partNum; INode * iNode = parsePath(partNum, path);
-        if (!accessible(iNode, mode::write)) return nullptr;
-        _fsc[partNum]->createFile(iNode, std::move(fileName), std::move(curUser));
+        if (!iNode || !accessible(iNode, mode::write)) return nullptr;
+        return _fsc[partNum]->createFile(iNode, std::move(fileName), std::move(curUser));
     }
+
+    vector<INode *> listDir(string path) {
+        int partNum; INode * iNode = parsePath(partNum, path);
+        if (!iNode || !accessible(iNode, mode::read)) return {};
+        return _fsc[partNum]->listDir(*iNode);
+    }
+
     bool accessible(INode * iNode, char mode) { // 判断用户是否具有对应的权限
         int attrGroup = getAttrGroup(getOwner(iNode), _curUser);
         return (iNode->mode[attrGroup] & mode);
@@ -176,6 +203,15 @@ public:
 
     string curUserName() {
         return string(_userData.userNames[_curUser]);
+    }
+
+    bool matchPassword(const string &userName, const string &password) {
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            if (_userData.userNames[i] == userName) {
+                return _userData.passwords[i] == password;
+            }
+        }
+        return false;
     }
 
     // 一些GUI界面，本应在APP类中，但产生了互相依赖

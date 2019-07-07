@@ -34,7 +34,6 @@ public:
     UserData userData;      // 系统参数
     InstallFlag installFlag;// 系统安装与否
     int curUser;            // 当前用户号
-    INode * curINode;       // 当前路径i节点
     std::fstream _fileStreamPool[_MAX_DISKS];
 
     /**
@@ -69,7 +68,7 @@ public:
         curUser = SU;
         _vhdc->readBlock((char *) & userData, _sysPartMin + _USER_DATA_OFFSET);
         _vfs = new VFSController(curUser, userData, _disk, _sysPartMin, _sysPartMax, _sliceSize, _fileStreamPool);
-        _vfs->_initFSC(); curINode = _vfs->defaultRoot();
+        _vfs->_initFSC(); _vfs->setDefaultCurINode();
         return true;
     }
 
@@ -86,7 +85,7 @@ public:
         // 分区初始化
         curUser = SU;
         _vfs = new VFSController(curUser, userData, _disk, _sysPartMin, _sysPartMax, _sliceSize, _fileStreamPool);
-        _vfs->install(); curINode = _vfs->defaultRoot();
+        _vfs->install(); _vfs->setDefaultCurINode();
 
         // 改写安装标志位
         installFlag.installed = true;

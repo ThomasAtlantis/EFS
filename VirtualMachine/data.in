@@ -1,2 +1,5 @@
-ls
+touch aaa
+ld -l
+touch ddd
+ld -l .
 exit

@@ -28,6 +28,7 @@ using std::cin;
 using std::map;
 
 #define all(x) (x).begin(),(x).end()
+#define lower(x) (char(((x) >= 'A' && (x) <= 'Z')?((x)+32):(x)))
 
 class FileTool {
 public:

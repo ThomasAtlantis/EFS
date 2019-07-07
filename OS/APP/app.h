@@ -8,6 +8,7 @@
 #include "../../utilities.h"
 #include "../VFS/vfs.h"
 #include "screen.h"
+#include "../FSC/fsc.h"
 
 #define DEBUG 1
 
@@ -34,17 +35,20 @@ private:
 public:
     App(VFSController &vfs): _vfs(vfs) {
         bind("help", help, "help: help <command>\n    Display information about builtin commands.");
-        bind("touch", touch, "touch: touch <filename>\n    Create a new empty file.");
+        bind("touch", touch, "touch: touch <fileName>\n    Create a new empty file.");
+        bind("ld", listDir, "ld: ld [-s|-l] [dirName]\n    list files in a directory.");
     }
 
     bool run() {
 //        freopen("data.in", "r", stdin);
 //        freopen("data.out", "w", stdout);
-        login();
-        do {
-            commandTip();
-        } while (readCommand());
-        return true;
+        if (login()) {
+            do {
+                commandTip();
+            } while (readCommand());
+            _vfs.saveInfo();
+            return true;
+        } else return false;
     }
 
     void commandTip() {
@@ -58,7 +62,7 @@ public:
     }
 
     bool readCommand() {
-        fflush(stdin);
+//        fflush(stdin);
         getline(cin, _cmdLine);
         vector<string> cmdParam = stringTool().split(_cmdLine, " ");
         string cmdName = cmdParam[0];
@@ -74,17 +78,75 @@ public:
     bool login() {
         cout << "login as: ";
         string userName, password;
-        cin >> userName;
-//        if (!_vfs.existUser(userName)) return false;
-        cout << userName << _machineName << "'s password: ";
-        cin >> password;
-//        if (!_vfs.match(userName, password)) return false;
-        cout << "Last login: " << endl;
+//        cin >> userName;
+//        cout << userName << _machineName << "'s password: ";
+//        password = _inputPassword(_PASSWORD_LENGTH);
+        userName = "root";
+        password = "123456";
+        if (!_vfs.matchPassword(userName, password)) return false;
+        cout << "Last login: " << _vfs.getLoginTime() << endl;
         cout << "Welcome to VirtualMachine X!" << endl;
+        _vfs.updateLoginTime();
         return true;
     }
 
+    string missParam(string cmd, const string &paramName) {
+        return cmd.append(": missing param ").append(paramName)
+            .append("\nTry 'help ").append(cmd).append("' for more information.");
+    }
+
     bool touch(vector<string> &param) {
+        if (param.empty()) {
+            cout << missParam("touch", "<fileName>");
+            return false;
+        } else if (!_vfs.createFile(param[0], _vfs.curUserName())) {
+            cout << "Failed to create file" << endl;
+            return false;
+        }
+        return true;
+    }
+
+    // 默认为短形式
+    bool listDir(vector<string> &param) {
+        string dirName = ".";
+        bool longFlag = false;
+        if (!param.empty() && param[0] == "-l") {
+            longFlag = true;
+        }
+        if (param.size() == 1 && param[0] != "-l" && param[0] != "-s") {
+            dirName = param[0];
+        } else if (param.size() > 1) {
+            dirName = param[1];
+        }
+        vector<INode *> list = _vfs.listDir(dirName);
+        if (longFlag) {
+            for (auto iNode: list) {
+                cout << lower(iNode->type);
+                for (char i : iNode->mode) {
+                    if (i & mode::read) cout <<  "r"; else cout << "-";
+                    if (i & mode::write) cout << "w"; else cout << "-";
+                    if (i & mode::exec) cout << "x"; else cout << "-";
+                }
+                cout << " ";
+                if (strlen(iNode->owner) > 6) cout << string(iNode->owner).substr(0, 6);
+                else cout << std::setw(6) << iNode->owner;
+                cout << " ";
+                std::stringstream ss;
+                ss << std::put_time(std::localtime(&iNode->ctime), "%Y-%m-%d %H:%M ");
+                cout << ss.str();
+                if (iNode->type == 'D') _screen.cprintf(iNode->name, FOREGROUND_BLUE| FOREGROUND_INTENSITY);
+                else cout << iNode->name;
+                cout << endl;
+            }
+        } else {
+            int cnt = 1;
+            for (auto iNode: list) {
+                if (iNode->type == 'D') _screen.cprintf(iNode->name, FOREGROUND_BLUE| FOREGROUND_INTENSITY, 10);
+                else cout << std::setw(10) << std::left << iNode->name;
+                if (cnt++ % 8 == 0) cout << endl;
+            }
+            if (cnt % 8 != 0 && !list.empty()) cout << endl;
+        }
         return true;
     }
 
@@ -109,13 +171,16 @@ public:
         int ch, p = 0;
         char password[_PASSWORD_LENGTH + 1] = {0};
         while (true) {
-            password[p ++] = static_cast<char>(_getch());
-            if (password[p - 1] == '\b') {
-                if (p > 1) {
-                    p = std::max(0, p - 2);
+            password[p] = static_cast<char>(_getch());
+            if (password[p] == '\b') {
+                if (p > 0) {
+                    p = std::max(0, p - 1);
                     cout << "\b \b";
                 }
-            } else cout << "*";
+            } else {
+                cout << "*";
+                p ++;
+            }
             if (p >= size) {
                 while ((ch = _getch()) != '\r' && ch != '\b');
                 if (ch == '\b') {

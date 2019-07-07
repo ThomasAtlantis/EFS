@@ -336,8 +336,9 @@ public:
         INode * iNode = newINode();
         for (int i = 0; i < curINode->blocks; ++ i) {
             _vhdc.readBlock((char *)dirBlock, * getBlockID(*iNode, i));
-            for (const auto &fileINode: dirBlock->itemList) {
-                _vhdc.readBlock((char *)iNode, fileINode);
+            for (int j = 0; i * _DIRBLOCK_ITEM_SIZE + j < curINode->childCount
+                && j < _DIRBLOCK_ITEM_SIZE; ++ j) {
+                _vhdc.readBlock((char *)iNode, dirBlock->itemList[j]);
                 if (string(iNode->name) == fileName) {
                     return iNode;
                 }
@@ -347,8 +348,21 @@ public:
     }
 
     // TODO: 路径解析
-    INode * parsePath(INode * curINode, string fileName) {
-        return getINode(curINode, std::move(fileName));
+    INode * parsePath(INode * curINode, string path) {
+        if (path.empty()) return curINode;
+        else {
+            size_t index = path.find('/');
+            string fileName;
+            if (index == string::npos) {
+                fileName = path;
+                path = "";
+            } else {
+                fileName = path.substr(0, index);
+                path = path.substr(index + 1, path.length() - index - 1);
+            }
+            curINode = getINode(curINode, fileName);
+            return parsePath(curINode, path);
+        }
     }
 
     /**
@@ -410,7 +424,7 @@ public:
         strcpy(dirINode->name, dirName.c_str());
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
-        dirINode->blocks = 1;
+        dirINode->blocks = 0;
         dirINode->type = 'D';//目录文件
         dirINode->childCount = 0;
         dirINode->mode[group::user] = mode::total;
@@ -421,7 +435,7 @@ public:
         dirINode->parentDir = _minBlockID;
         bid_t num;
         _fbc.distribute(num);
-        push(*dirINode,num);
+        push(*dirINode, num);
         DirBlock * dirBlock = newDirBlock();
         _vhdc.writeBlock((char *) dirBlock, num);
         _vhdc.writeBlock((char *) dirINode, dirINode->bid);
@@ -468,6 +482,7 @@ public:
         }
         dirBlock->itemList[offset]=child.bid;
         dirINode.childCount ++;
+        _vhdc.writeBlock((char *)&dirINode, dirINode.bid);
         _vhdc.writeBlock((char *) dirBlock, * blockID);
         return true;
     }
@@ -510,19 +525,14 @@ public:
     vector<INode *> listDir(INode &dirINode) {
 //        if (!accessible(dirINode, mode::read)) return {};
         vector <INode *> result;
-        if(dirINode.type=='F'||(dirINode.type=='D'&&isEmptyDir(dirINode))) // 文件或空文件夹
-        {
+        if(dirINode.type=='F'||(dirINode.type=='D'&&isEmptyDir(dirINode))) { // 文件或空文件夹
             return {};
-        }
-        else//正常含有子文件的文件夹
-        {
-            for(int i=0;i<dirINode.blocks-1;i++)
-            {
+        } else { //正常含有子文件的文件夹
+            for (int i = 0; i < dirINode.blocks - 1; i++) {
                 auto * blockID  = getBlockID(dirINode, i) ;
                 DirBlock * dirBlock = newDirBlock();
                 _vhdc.readBlock((char *) dirBlock,*blockID);
-                for(int j=0;j<_DIRBLOCK_ITEM_SIZE;j++)
-                {
+                for (int j = 0; j < _DIRBLOCK_ITEM_SIZE; j++) {
                     INode * iNode = newINode();
                     _vhdc.readBlock((char *) iNode,dirBlock->itemList[j]);
                     result.push_back(iNode);
@@ -621,20 +631,22 @@ public:
                 cout<<"distribute inode block failed!"<<endl;
                 return nullptr;
             }
-            iNode->ctime=iNode->mtime=time(nullptr);
-            iNode->bid=blockID;
-            strcpy(iNode->owner,curUser.c_str());
-            iNode->type='F';
-            strcpy(iNode->name,fileName.c_str());
+            iNode->ctime = iNode->mtime = time(nullptr);
+            iNode->bid = blockID;
+            strcpy(iNode->owner, curUser.c_str());
+            iNode->type = 'F';
+            strcpy(iNode->name, fileName.c_str());
             BufferTool().copy(iNode->mode, curINode->mode, 3);
-            iNode->size=0;
-            bid_t * firstBlock = new bid_t;
+            iNode->size = 0;
+            iNode->parentDir = curINode->bid;
+            addDirChild(*curINode, *iNode);
+            auto * firstBlock = new bid_t;
             if(!_fbc.distribute(*firstBlock))
             {
                 cout<<"distribute block failed!"<<endl;
                 return nullptr;
             }
-            push(*iNode,*firstBlock);
+            push(*iNode, *firstBlock);
             _vhdc.writeBlock((char *)iNode,iNode->bid);
         }
         else
