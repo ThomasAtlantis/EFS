@@ -175,6 +175,20 @@ public:
         return _fsc[partNum]->createFile(error, iNode, std::move(fileName), std::move(curUser));
     }
 
+    INode * createDir(int &error, string dirName, string curUser) {
+        size_t index = dirName.rfind('/');
+        string path;
+        if (index == string::npos) {
+            path = "";
+        } else {
+            path = dirName.substr(0, index);
+            dirName = dirName.substr(index + 1, dirName.length() - index - 1);
+        }
+        int partNum; INode * iNode = parsePath(partNum, path);
+        if (!iNode || !accessible(iNode, mode::write)) return nullptr;
+        return _fsc[partNum]->createDir(error, iNode, std::move(dirName), std::move(curUser));
+    }
+
     bool removeFile(int partNum, INode * iNode) {
         INode * parent = _fsc[partNum]->parentINode(iNode);
         if (!iNode || !accessible(parent, mode::write)) return false;

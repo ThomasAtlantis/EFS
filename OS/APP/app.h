@@ -4,11 +4,10 @@
 
 #pragma once
 
-#include <utility>
 #include "../../utilities.h"
 #include "../VFS/vfs.h"
-#include "screen.h"
 #include "../FSC/fsc.h"
+#include "screen.h"
 
 #define DEBUG 1
 
@@ -38,6 +37,7 @@ public:
         bind("ld", listDir, "ld: ld [-s|-l] [dirName]\n    list files in a directory.");
         bind("clear", clear, "clear: clear\n    clear the screen.");
         bind("rm", remove, "rm: rm [-r][-f] <fileName>\n    remove a file.");
+        bind("mkdir", makeDir, "mkdir: mkdir <dirName>\n    create a new empty directory.");
     }
 
     bool run() {
@@ -116,6 +116,39 @@ public:
 
     bool clear(vector<string> &param) {
         system("cls");
+        return true;
+    }
+
+    bool makeDir(vector<string> &param) {
+        if (param.empty()) {
+            cout << missParam("mkdir", "<dirName>") << endl;
+            return false;
+        }
+        int error = 0;
+        string fileName = param[0];
+        if (!_vfs.createDir(error, fileName, _vfs.curUserName())) {
+            cout << "touch: cannot create '" << param[0] << "': ";
+            if (error == -3) cout << "File already exists";
+            cout << endl;
+            return false;
+        }
+        return true;
+        return true;
+    }
+
+    bool changeDir(vector<string> &param) {
+        return true;
+    }
+
+    bool pwd(vector<string> &param) {
+        return true;
+    }
+
+    bool moveFile(vector<string> &param) {
+        return true;
+    }
+
+    bool copyFile(vector<string> &param) {
         return true;
     }
 

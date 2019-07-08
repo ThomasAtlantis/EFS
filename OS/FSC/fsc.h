@@ -365,7 +365,6 @@ public:
     }
 
     /**
-     *
      * 此文件夹下是否存在指定文件
      * @param iNode
      * @param fileName
@@ -375,26 +374,33 @@ public:
         return (nullptr != getINode(iNode, std::move(fileName)));
     }
 
-    /**在当前文件夹下创建子文件夹
-     *@param curINode 当前目录
+    /**
+     * 在当前文件夹下创建子文件夹
+     * @param curINode 当前目录
      * @param dirName 新建的文件夹名字
-     *@return 新建文件夹的INode
+     * @return 新建文件夹的INode
      */
-    // TODO :测试createDir
-    INode * createDir(INode * curINode, string curUser, string dirName) {
-        if (dirName.length() > _FILENAME_MAXLEN)
+    INode * createDir(int &error, INode * curINode, string dirName, string curUser) {
+        error = 0;
+        if (dirName.length() > _FILENAME_MAXLEN) {
+            error = -2;
             return nullptr;
+        }
+        if(exists(curINode, dirName)) {
+            error = -3;
+            return nullptr;
+        }
         INode * dirINode = newINode();
         strcpy(dirINode->name, dirName.c_str());
         dirINode->ctime = time(nullptr);
         dirINode->mtime = time(nullptr);
-        dirINode->blocks = 1;
-        dirINode->type = 'D';//目录文件
+        dirINode->blocks = 0;
+        dirINode->type = 'D'; //目录文件
         dirINode->childCount = 0;
         BufferTool().copy(dirINode->mode, curINode->mode, 3);
-        strcpy(dirINode->owner,curUser.c_str());
-        if(!_fbc.distribute(dirINode->bid))
-        {
+        strcpy(dirINode->owner, curUser.c_str());
+        if(!_fbc.distribute(dirINode->bid)) {
+            error = -1;
             std::cout<<"distribute unsuccessfully"<<endl;
             return nullptr;
         }
@@ -415,7 +421,6 @@ public:
      * @param curUser 创建分区的用户
      * @return 根目录文件的i节点
      */
-     // TODO: test createRootDir
     INode * createRootDir(string dirName, string curUser) {
         if (dirName.length() > _FILENAME_MAXLEN)
             return nullptr;
@@ -465,9 +470,7 @@ public:
      * @param child 子文件的i节点
      * @return 操作成功与否
      */
-     //TODO: test addDirChild
     bool addDirChild(INode &dirINode, INode &child) {
-//         if (!accessible(dirINode, mode::write)) return false;
         DirBlock * dirBlock = newDirBlock();
         int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
         int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
