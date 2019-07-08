@@ -131,6 +131,8 @@ public:
         if (!_vfs.createDir(error, fileName, _vfs.curUserName())) {
             cout << "mkdir: cannot create '" << param[0] << "': ";
             if (error == -3) cout << "File already exists";
+            else if (error == -5) cout << "FileName too long";
+            else if (error == -6) cout << "FileName illegal";
             cout << endl;
             return false;
         }
@@ -148,6 +150,8 @@ public:
             cout << "cd: cannot access '" << param[0] << "': ";
             if (error == -3) cout << "No such directory";
             else if (error == -4) cout << "Permission denied";
+            else if (error == -5) cout << "DirName too long";
+            else if (error == -6) cout << "DirName illegal";
             cout << endl;
             return false;
         }
@@ -185,15 +189,15 @@ public:
     }
 
     bool _remove(string fileName, bool confirmFlag, bool recursive) {
-        int partNum;
-        INode * iNode = _vfs.parsePath(partNum, fileName);
+        int partNum; string fileNameCopy = fileName;
+        INode * iNode = _vfs.parsePath(partNum, fileNameCopy);
         if (!iNode) {
             cout << "rm: cannot remove '" << fileName << "': No such file or directory" << endl;
             return false;
         }
         if (iNode->type == 'D' && !recursive) {
-                cout << "rm: cannot remove '" << fileName << "': Is a directory" << endl;
-                return false;
+            cout << "rm: cannot remove '" << fileName << "': Is a directory" << endl;
+            return false;
         }
         if (confirmFlag) {
             if (iNode->type == 'F') {
@@ -208,7 +212,13 @@ public:
             fflush(stdin);
             if (option == 'n') return false;
         }
-        return _vfs.removeFile(partNum, iNode);
+        int error = 0;
+        bool result = _vfs.removeFile(error, partNum, iNode);
+        if (error == -4) {
+            cout << "rm: cannot remove '" << fileName << "': Permission denied" << endl;
+            return false;
+        }
+        return result;
     }
 
     void _sortByName(vector<INode *> &list) {
@@ -235,7 +245,12 @@ public:
             if (p == 'a') allFlag = true;
         }
         if (dirName.empty()) dirName = ".";
-        vector<INode *> list = _vfs.listDir(dirName, allFlag);
+        int error = 0;
+        vector<INode *> list = _vfs.listDir(error, dirName, allFlag);
+        if (error == -3) {
+            cout << "rm: cannot access '" << dirName << "': No such file or directory" << endl;
+            return false;
+        }
         _sortByName(list);
         if (longFlag) {
             for (auto iNode: list) {

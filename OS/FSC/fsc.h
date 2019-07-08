@@ -61,6 +61,12 @@ typedef struct {
     size_t size;
 } Buffer;
 
+// -1: 分配失败;
+// -2: 空值错误;
+// -3: 存在冲突;
+// -5: 名称超长;
+// -6: 语法错误;
+
 class FSController {
 private:
     const bid_t _minBlockID; // 文件系统管理的最小块号
@@ -382,10 +388,6 @@ public:
      */
     INode * createDir(int &error, INode * curINode, string dirName, string curUser) {
         error = 0;
-        if (dirName.length() > _FILENAME_MAXLEN) {
-            error = -2;
-            return nullptr;
-        }
         if(exists(curINode, dirName)) {
             error = -3;
             return nullptr;
@@ -544,7 +546,7 @@ public:
             bid_t * blockID = getBlockID(dirINode, dirINode.blocks - 1);
             DirBlock * dirBlock = newDirBlock();
             _vhdc.readBlock((char *) dirBlock, *blockID);
-            for(int i = 0; i < offset; i ++) {
+            for (int i = 0; i < offset; i ++) {
                 INode * iNode = newINode();
                 _vhdc.readBlock((char *) iNode, dirBlock->itemList[i]);
                 result.push_back(iNode);
@@ -643,14 +645,9 @@ public:
         workingDir(path, parent);
     }
 
-    // -3: exists; -2: long name; -1: distribute failed
     INode * createFile(int &error, INode * curINode, string fileName, string curUser) { //创建文件
         INode * iNode = nullptr;
         error = 0;
-        if (fileName.length() > _FILENAME_MAXLEN) {
-            error = -2;
-            return nullptr;
-        }
         if(!exists(curINode, fileName)) { //重名等其他判断
             iNode = newINode();
             //申请块，I节点

@@ -160,13 +160,28 @@ public:
         string path;
         if (index == string::npos) {
             path = "";
+        } else if (index == 0) {
+            error = -6;
+            return nullptr;
         } else {
             path = fileName.substr(0, index);
             fileName = fileName.substr(index + 1, fileName.length() - index - 1);
         }
+        error = fileNameCheck(fileName);
+        if (error) return nullptr;
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode || !accessible(iNode, mode::write)) return nullptr;
         return _fsc[partNum]->createFile(error, iNode, std::move(fileName), std::move(curUser));
+    }
+
+    int fileNameCheck(const string &fileName) {
+        if (fileName.empty()) return -2;
+        if (fileName.length() > _FILENAME_MAXLEN) return -5;
+        if (fileName[0] == '.') return -6;
+        for (auto ch: fileName)
+            if (ch == '/' || ch == ' ')
+                return -6;
+        return 0;
     }
 
     INode * createDir(int &error, string dirName, string curUser) {
@@ -174,18 +189,26 @@ public:
         string path;
         if (index == string::npos) {
             path = "";
+        } else if (index == 0) {
+            error = -6;
+            return nullptr;
         } else {
             path = dirName.substr(0, index);
             dirName = dirName.substr(index + 1, dirName.length() - index - 1);
         }
+        error = fileNameCheck(dirName);
+        if (error) return nullptr;
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode || !accessible(iNode, mode::write)) return nullptr;
         return _fsc[partNum]->createDir(error, iNode, std::move(dirName), std::move(curUser));
     }
 
-    bool removeFile(int partNum, INode * iNode) {
+    bool removeFile(int &error, int partNum, INode * iNode) {
+        error = 0;
         INode * parent = _fsc[partNum]->parentINode(iNode);
-        if (!iNode || !accessible(parent, mode::write)) return false;
+        if (!parent || !accessible(parent, mode::write)) {
+            error = -4; return false;
+        }
         int size = -iNode->size;
         _fsc[partNum]->changeParentSize(iNode, size);
         bool result =  _fsc[partNum]->removeFile(*iNode);
@@ -193,24 +216,21 @@ public:
         return result;
     }
 
-    vector<INode *> listDir(string path, bool allFlag=false) {
+    vector<INode *> listDir(int &error, string path, bool allFlag=false) {
+        error = 0;
         int partNum; INode * iNode = parsePath(partNum, path);
-        if (!iNode || !accessible(iNode, mode::read)) return {};
-        return _fsc[partNum]->listDir(*iNode, allFlag);
+        if (!iNode) { error = -3; return {}; }
+        if (!accessible(iNode, mode::read)) { error = -4; return {};}
+        if (iNode->type == 'F') return {iNode};
+        else return _fsc[partNum]->listDir(*iNode, allFlag);
     }
 
     // -3: not exists; -4: no right
     bool changeDir(int &error, string path) {
         if (path == ".") return true;
         int partNum; INode * iNode = parsePath(partNum, path);
-        if (!iNode) {
-            error = -3;
-            return false;
-        }
-        if (!accessible(iNode, mode::read)) {
-            error = -4;
-            return false;
-        }
+        if (!iNode) { error = -3; return false; }
+        if (!accessible(iNode, mode::read)) { error = -4; return false; }
         _vhdc->writeBlock((char *) curINode, curINode->bid);
         curINode = iNode;
         curPart = partNum;
