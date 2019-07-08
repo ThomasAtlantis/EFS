@@ -24,7 +24,7 @@ private:
     } Command;
     VFSController &_vfs; // 虚拟文件系统
     Screen _screen;
-    string _curPath = "~";
+    string _curPath = "/usr";
     string _symbol = "#";
     string _machineName = "@VirtualMachine";
     map<string, Command> _cmds;
@@ -34,10 +34,12 @@ public:
     App(VFSController &vfs): _vfs(vfs) {
         bind("help", help, "help: help <command>\n    Display information about builtin commands.");
         bind("touch", touch, "touch: touch <fileName>\n    Create a new empty file.");
-        bind("ld", listDir, "ld: ld [-s|-l] [dirName]\n    list files in a directory.");
+        bind("ld", listDir, "ld: ld [-s|-l|-a] [dirName]\n    list files in a directory.");
         bind("clear", clear, "clear: clear\n    clear the screen.");
         bind("rm", remove, "rm: rm [-r][-f] <fileName>\n    remove a file.");
         bind("mkdir", makeDir, "mkdir: mkdir <dirName>\n    create a new empty directory.");
+        bind("cd", changeDir, "cd: cd <DirName>\n Change the current working directory.");
+        bind("pwd", pwd, "pwd: pwd\n    Print the name of the current working directory.");
     }
 
     bool run() {
@@ -127,20 +129,34 @@ public:
         int error = 0;
         string fileName = param[0];
         if (!_vfs.createDir(error, fileName, _vfs.curUserName())) {
-            cout << "touch: cannot create '" << param[0] << "': ";
+            cout << "mkdir: cannot create '" << param[0] << "': ";
             if (error == -3) cout << "File already exists";
             cout << endl;
             return false;
         }
         return true;
-        return true;
     }
 
     bool changeDir(vector<string> &param) {
+        if (param.empty()) {
+            cout << missParam("cd", "<dirName>") << endl;
+            return false;
+        }
+        int error = 0;
+        string dirName = param[0];
+        if (!_vfs.changeDir(error, dirName)) {
+            cout << "cd: cannot access '" << param[0] << "': ";
+            if (error == -3) cout << "No such directory";
+            else if (error == -4) cout << "Permission denied";
+            cout << endl;
+            return false;
+        }
+        _curPath = _vfs.workingDir(_vfs.curPart, _vfs.curINode);
         return true;
     }
 
     bool pwd(vector<string> &param) {
+        cout << _vfs.workingDir(_vfs.curPart, _vfs.curINode) << endl;
         return true;
     }
 
@@ -208,18 +224,18 @@ public:
     }
 
     // 默认为短形式
-    bool listDir(vector<string> &param) {
-        string dirName = ".";
+    bool listDir(vector<string> &vec) {
+        string dirName = _parseArgum(vec);
+        string params = _parseParam(vec);
         bool longFlag = false;
-        if (!param.empty() && param[0] == "-l") {
-            longFlag = true;
+        bool allFlag = false;
+        for (auto p: params) {
+            if (p == 'l') longFlag = true;
+            if (p == 's') longFlag = false;
+            if (p == 'a') allFlag = true;
         }
-        if (param.size() == 1 && param[0] != "-l" && param[0] != "-s") {
-            dirName = param[0];
-        } else if (param.size() > 1) {
-            dirName = param[1];
-        }
-        vector<INode *> list = _vfs.listDir(dirName);
+        if (dirName.empty()) dirName = ".";
+        vector<INode *> list = _vfs.listDir(dirName, allFlag);
         _sortByName(list);
         if (longFlag) {
             for (auto iNode: list) {

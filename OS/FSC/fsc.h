@@ -526,11 +526,10 @@ public:
      * @param dirINode
      * @return
      */
-    vector<INode *> listDir(INode &dirINode) {
+    vector<INode *> listDir(INode &dirINode, bool allFlag) {
         vector <INode *> result;
-        if(dirINode.type=='F'||(dirINode.type=='D'&&isEmptyDir(dirINode))) { // 文件或空文件夹
-            return {};
-        } else { //正常含有子文件的文件夹
+        if (dirINode.type != 'D') return {};
+        if (!isEmptyDir(dirINode)) { //正常含有子文件的文件夹
             for (int i = 0; i < dirINode.blocks - 1; i++) {
                 auto * blockID  = getBlockID(dirINode, i) ;
                 DirBlock * dirBlock = newDirBlock();
@@ -551,7 +550,24 @@ public:
                 result.push_back(iNode);
             }
         }
+        if (allFlag) {
+            if (dirINode.parentDir != _minBlockID) {
+                INode *parent = newINode();
+                _vhdc.readBlock((char *) parent, dirINode.parentDir);
+                strcpy(parent->name, "..");
+                result.push_back(parent);
+            }
+            INode * curINode = newINode(&dirINode);
+            strcpy(curINode->name, ".");
+            result.push_back(curINode);
+        }
         return result;
+    }
+
+    INode * newINode(INode * iNode) {
+        auto newOne = newINode();
+        BufferTool().copy((char *) newOne, (char *) iNode, _BLOCK_SIZE);
+        return newOne;
     }
 
     bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
@@ -604,6 +620,7 @@ public:
     }
 
     INode * parentINode(INode * iNode) {
+        if (iNode->parentDir == _minBlockID) return nullptr;
         INode * parent = newINode();
         _vhdc.readBlock((char *) parent, iNode->parentDir);
         return parent;
@@ -615,6 +632,13 @@ public:
         parent->size += size;
         _vhdc.writeBlock((char *) parent, parent->bid);
         changeParentSize(parent, size);
+    }
+
+    void workingDir(string &path, INode * iNode) {
+        path = string(iNode->name) + "/" + path;
+        if (iNode->parentDir == _minBlockID) return;
+        INode * parent = parentINode(iNode);
+        workingDir(path, parent);
     }
 
     // -3: exists; -2: long name; -1: distribute failed

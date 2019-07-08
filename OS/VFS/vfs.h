@@ -124,41 +124,35 @@ public:
         _vhdc->writeBlock((char *) &_partData, _sysPartMin + _PART_DATA_OFFSET);
     }
 
-    /**
-     * 解析路径，分发到子文件系统
-     * @param path 路径名
-     * @return -1：cannot access; 子系统编号; -2: curINode
-     */
-    int parsePart(string &path) {
-        if (!path.empty() && path[0] == '/') {
-            size_t index = path.find('/', 1);
-            string partName = path.substr(0, index - 1);
-            for (int i = 0; i < _partData.partCount; ++ i) {
+    INode * parsePath(int &partNum, string &fileName) {
+        INode * iNode = nullptr;
+        if (!fileName.empty() && fileName[0] == '/') {
+            size_t index = fileName.find('/', 1);
+            string partName = fileName.substr(0, index - 1);
+            for (int i = 0; i < _partData.partCount; ++i) {
                 if (_partData.partNames[i] == partName) {
-                    if (index < path.length() - 1)
-                        path = path.substr(index + 1, path.length() - index);
-                    else path = "";
-                    return i;
+                    if (index != string::npos && index < fileName.length() - 1)
+                        fileName = fileName.substr(index + 1, fileName.length() - index);
+                    else fileName = "";
+                    partNum = i;
+                    iNode = _fsc[partNum]->rootINode;
+                    break;
                 }
             }
-            return -1;
-        } else return curPart;
-    }
-
-    // /home/admin/a.txt
-    // /home/admin
-
-    // ./home/admin/a.txt
-    // home/admin
-    INode * parsePath(int &partNum, string &fileName) {
-        partNum = parsePart(fileName);
-        if (partNum == -1) return nullptr;
-        INode * iNode = _fsc[partNum]->rootINode;
-        if (fileName[0] == '.') {
+        } else {
             iNode = curINode;
-            fileName = fileName.substr(1, fileName.length() - 1);
+            partNum = curPart;
+            if (fileName == ".") fileName = "";
+            else if (fileName == "..") {
+                iNode = _fsc[partNum]->parentINode(iNode);
+                fileName = "";
+            } else if (fileName.substr(0, 2) == "./") {
+                if (fileName.length() == 2) fileName = "";
+                else fileName = fileName.substr(2, fileName.length() - 2);
+            }
         }
-        return _fsc[partNum]->parsePath(iNode, fileName);
+        if (!iNode) return nullptr;
+        else return _fsc[partNum]->parsePath(iNode, fileName);
     }
 
     INode * createFile(int &error, string fileName, string curUser) {
@@ -199,15 +193,39 @@ public:
         return result;
     }
 
-    vector<INode *> listDir(string path) {
+    vector<INode *> listDir(string path, bool allFlag=false) {
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode || !accessible(iNode, mode::read)) return {};
-        return _fsc[partNum]->listDir(*iNode);
+        return _fsc[partNum]->listDir(*iNode, allFlag);
+    }
+
+    // -3: not exists; -4: no right
+    bool changeDir(int &error, string path) {
+        int partNum; INode * iNode = parsePath(partNum, path);
+        if (!iNode) {
+            error = -3;
+            return false;
+        }
+        if (!accessible(iNode, mode::read)) {
+            error = -4;
+            return false;
+        }
+        _vhdc->writeBlock((char *) curINode, curINode->bid);
+        delete curINode;
+        curINode = iNode;
+        curPart = partNum;
+        return true;
     }
 
     bool accessible(INode * iNode, char mode) { // 判断用户是否具有对应的权限
         int attrGroup = getAttrGroup(getOwner(iNode), _curUser);
         return (iNode->mode[attrGroup] & mode);
+    }
+
+    string workingDir(int partNum, INode * iNode) {
+        string path;
+        _fsc[partNum]->workingDir(path, iNode);
+        return path;
     }
 
     string getOwner(INode * iNode) {
