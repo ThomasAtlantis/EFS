@@ -9,10 +9,12 @@
 #include "../FSC/fsc.h"
 #include "screen.h"
 
-#define DEBUG 1
-
 using std::ifstream;
 using std::ofstream;
+
+#define DEBUG 1
+#define WIDTH 108
+#define HEIGHT 50
 
 class App {
 
@@ -29,35 +31,23 @@ private:
     string _machineName = "@VirtualMachine";
     map<string, Command> _cmds;
     string _cmdLine;
-    std::thread thread;
     vector<string> history;
+    char _buffer[WIDTH * HEIGHT];
+    HANDLE hout;
+
 public:
-    App(VFSController &vfs): _vfs(vfs), thread(keyListener, this) {
-        HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
+    App(VFSController &vfs): _vfs(vfs) {
         bind("help", help, "help: help <command>\n    Display information about builtin commands.");
         bind("touch", touch, "touch: touch <fileName>\n    Create a new empty file.");
-        bind("ld", listDir, "ld: ld [-s|-l|-a] [dirName]\n    list files in a directory.");
-        bind("clear", clear, "clear: clear\n    clear the screen.");
-        bind("rm", remove, "rm: rm [-r][-f] <fileName>\n    remove a file.");
-        bind("mkdir", makeDir, "mkdir: mkdir <dirName>\n    create a new empty directory.");
+        bind("ld", listDir, "ld: ld [-s|-l|-a] [dirName]\n    List files in a directory.");
+        bind("clear", clear, "clear: clear\n    Clear the screen.");
+        bind("rm", remove, "rm: rm [-r][-f] <fileName>\n    Remove a file.");
+        bind("mkdir", makeDir, "mkdir: mkdir <dirName>\n    Create a new empty directory.");
         bind("cd", changeDir, "cd: cd <DirName>\n    Change the current working directory.");
         bind("pwd", pwd, "pwd: pwd\n    Print the name of the current working directory.");
+        bind("vim", edit, "vim: vim <fileName>\n    Edit text file.");
+        bind("cat", print, "cat: cat <fileName>\n    print the content of text file.");
         history = {""};
-    }
-
-    void keyListener() {
-        MSG msg = {0};
-        HWND hConsole = GetActiveWindow();
-        RegisterHotKey(hConsole, 5, 0x4000, VK_ESCAPE);
-        while (GetMessage(&msg, NULL, 0, 0) != 0) {
-            if (msg.message == WM_HOTKEY) {
-                switch(msg.wParam) {
-                    case 5:
-                        printf("ESC");
-                        break;
-                }
-            }
-        }
     }
 
     bool run() {
@@ -123,9 +113,16 @@ public:
                         break;
                 }
             } else if (symbol.ch[0] == '\b') {
-                if (!_cmdLine.empty()) {
-                    _cmdLine = _cmdLine.substr(0, _cmdLine.length() - 1);
-                    cout << "\b \b";
+                if (cursorIndex > 0) {
+                    for (int i = 0; i < cursorIndex; ++ i) cout << "\b \b";
+                    string newCmdLine;
+                    if (cursorIndex != 1) newCmdLine += _cmdLine.substr(0, cursorIndex - 1);
+                    size_t cnt = _cmdLine.length() - cursorIndex;
+                    if (cursorIndex != _cmdLine.length())
+                        newCmdLine.append(_cmdLine.substr(cursorIndex, _cmdLine.length() - cursorIndex));
+                    _cmdLine = newCmdLine;
+                    cout << _cmdLine << " \b";
+                    for (int i = 0; i < cnt; ++ i) cout << "\b";
                     cursorIndex --;
                 }
             } else if (symbol.ch[0] == '\t') {
@@ -180,7 +177,7 @@ public:
                     symbol.key = getch();
                 }
                 continue;
-            } else {
+            } else if (symbol.ch[0] <= 126 && symbol.ch[0] >= 32) {
                 symbol.ch[1] = '\0';
                 for (int i = 0; i < cursorIndex; ++ i) cout << "\b \b";
                 string newCmdLine;
@@ -232,6 +229,126 @@ public:
         string result = cmd + ": missing param " + paramName
             + "\nTry 'help " + cmd + "' for more information.";
         return result;
+    }
+
+    bool edit(vector<string> &param) {
+        if (param.empty()) {
+            cout << missParam("vim", "<fileName>") << endl;
+            return false;
+        }
+        int error = 0;
+        string fileName = param[0];
+        strcpy(_buffer, "hello world!");
+        // open
+        // read to buffer
+        // show buffer
+        system("cls");
+        cout << endl;
+        cout << _buffer;
+        bool overFlag = false;
+        hout = GetStdHandle(STD_OUTPUT_HANDLE);
+        MSG msg = {0};
+        HWND hConsole = GetActiveWindow();
+        RegisterHotKey(hConsole, 0, 0x4000| MOD_CONTROL, VK_RETURN);
+        RegisterHotKey(hConsole, 1, 0x4000, 'I');
+        while (GetMessage(&msg, NULL, 0, 0) != 0) {
+            if (msg.message == WM_HOTKEY) {
+                if (msg.wParam == 0) {
+                    _gotoXY(hout, 0, 0);
+                    cout << ":          ";
+                    _gotoXY(hout, 1, 0);
+                    bool loop = true;
+                    while (loop) {
+                        string cmd;
+                        char ch[2] = {0};
+                        ch[0] = static_cast<char>(getch());
+                        while (ch[0] != '\r') {
+                            cmd += ch;
+                            if (ch[0] == 27) {
+                                _gotoXY(hout, 0, 0);
+                                cout << "           ";
+                                _gotoXY(hout, 0, 0);
+                                loop = false;
+                                break;
+                            }
+                            cout << ch;
+                            ch[0] = static_cast<char>(getch());
+                        }
+                        if (!loop) break;
+                        if (cmd == "q") {
+                            overFlag = true;
+                            break;
+                        }
+                        _gotoXY(hout, 1, 0);
+                        cout << "          ";
+                        _gotoXY(hout, 1, 0);
+                    }
+                } else if (msg.wParam == 1) {
+                    _gotoXY(hout, 0, 0);
+                    cout << "< INSERT >";
+                    int x = 0, y = 1;
+                    _gotoXY(hout, 0, 1);
+                    union {
+                        char ch[2];
+                        int key;
+                    } symbol {};
+                    while (symbol.ch[0] != 27) {
+                        symbol.key = getch();
+                        if (symbol.ch[0] == -32) {
+                            symbol.key = getch();
+                            switch (symbol.ch[0]) {
+                                case 75:
+                                    x = std::max(x - 1, 0);
+                                    _gotoXY(hout, x, y); // 左移
+                                    break;
+                                case 72:
+                                    y = std::max(y - 1, 1);
+                                    _gotoXY(hout, x, y); // 上移
+                                    break;
+                                case 80:
+                                    y ++;
+                                    _gotoXY(hout, x, y); // 下移
+                                    break;
+                                case 77:
+                                    x = std::min(x + 1, WIDTH);
+                                    _gotoXY(hout, x, y); // 右移
+                                    break;
+                            }
+                        } else if (symbol.ch[0] == '\b') {
+                            if (x == WIDTH) {
+                                cout << " \b\b \b";
+                                x = x - 1;
+                            } else if (x > 0) {
+                                cout << "\b \b";
+                                x = x - 1;
+                            }
+                        } else if (symbol.ch[0] >= 32 && symbol.ch[0] <= 126) {
+                            if (x <= WIDTH) {
+                                cout << symbol.ch ;
+                                if (x < WIDTH) {
+                                    x = x + 1;
+                                }
+                                _gotoXY(hout, x, y);
+                            }
+                        }
+                    }
+                    _gotoXY(hout, 0, 0);
+                    cout << "           ";
+                    _gotoXY(hout, 0, 0);
+                    fflush(stdin);
+                }
+            }
+            if (overFlag) break;
+        }
+        UnregisterHotKey(hConsole, 0);
+        UnregisterHotKey(hConsole, 1);
+        system("cls");
+        // save buffer
+        return true;
+    }
+
+    bool print(vector<string> &param) {
+        return true;
     }
 
     bool touch(vector<string> &param) {
