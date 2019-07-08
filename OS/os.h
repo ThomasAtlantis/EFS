@@ -78,7 +78,7 @@ public:
         string password = initPassword();
         strcpy(userData.userNames[userData.userCount], _SUPERADMIN_NAME);
         strcpy(userData.passwords[userData.userCount], password.c_str());
-        userData.userGroup[userData.userCount ++] = 0;
+        userData.userGroup[userData.userCount ++] = 'a';
         _vhdc->writeBlock((char *) & userData, _sysPartMin + _USER_DATA_OFFSET);
         cout << endl << endl;
 

@@ -37,6 +37,7 @@ public:
         bind("help", help, "help: help <command>\n    Display information about builtin commands.");
         bind("touch", touch, "touch: touch <fileName>\n    Create a new empty file.");
         bind("ld", listDir, "ld: ld [-s|-l] [dirName]\n    list files in a directory.");
+        bind("clear", clear, "clear: clear\n    clear the screen.");
     }
 
     bool run() {
@@ -83,7 +84,7 @@ public:
 //        password = _inputPassword(_PASSWORD_LENGTH);
         userName = "root";
         password = "123456";
-        fflush(stdin);
+//        fflush(stdin);
         if (!_vfs.matchPassword(userName, password)) return false;
         cout << "Last login: " << _vfs.getLoginTime() << endl;
         cout << "Welcome to VirtualMachine X!" << endl;
@@ -100,10 +101,20 @@ public:
         if (param.empty()) {
             cout << missParam("touch", "<fileName>") << endl;
             return false;
-        } else if (!_vfs.createFile(param[0], _vfs.curUserName())) {
-            cout << "Failed to create file" << endl;
+        }
+        int error = 0;
+        string fileName = param[0];
+        if (!_vfs.createFile(error, fileName, _vfs.curUserName())) {
+            cout << "touch: cannot create '" << param[0] << "': ";
+            if (error == -3) cout << "File already exists";
+            cout << endl;
             return false;
         }
+        return true;
+    }
+
+    bool clear(vector<string> &param) {
+        system("cls");
         return true;
     }
 
@@ -131,7 +142,8 @@ public:
                 cout << " ";
                 if (strlen(iNode->owner) > 6) cout << string(iNode->owner).substr(0, 6);
                 else cout << std::setw(6) << iNode->owner;
-                cout << " ";
+                cout << " " << _vfs.groupOf(iNode->owner) << " ";
+                cout << std::setw(6) << iNode->size << "KB ";
                 std::stringstream ss;
                 ss << std::put_time(std::localtime(&iNode->ctime), "%Y-%m-%d %H:%M ");
                 cout << ss.str();
@@ -142,11 +154,12 @@ public:
         } else {
             int cnt = 1;
             for (auto iNode: list) {
-                if (iNode->type == 'D') _screen.cprintf(iNode->name, FOREGROUND_BLUE| FOREGROUND_INTENSITY, 10);
-                else cout << std::setw(10) << std::left << iNode->name;
+                if (iNode->type == 'D') _screen.cprintf(iNode->name, FOREGROUND_BLUE| FOREGROUND_INTENSITY);
+                else cout << iNode->name;
+                cout << "\t";
                 if (cnt++ % 8 == 0) cout << endl;
             }
-            if (cnt % 8 != 0 && !list.empty()) cout << endl;
+            if (cnt % 8 != 1 && !list.empty()) cout << endl;
         }
         return true;
     }

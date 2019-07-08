@@ -1,7 +1,4 @@
-root
-123456
 touch aaa
-ld -l
+ld
 touch ddd
-ld -l .
 exit

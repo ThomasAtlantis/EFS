@@ -24,7 +24,7 @@
     - sizeof(unsigned int) * 4 \
     - sizeof(bid_t) * 3 \
     - _FILENAME_MAXLEN - 1 \
-    - (_USERNAME_MAXLEN - 1) * 2 \
+    - _USERNAME_MAXLEN - 1 \
     - 4)
 #define _DIRBLOCK_ITEM_SIZE ((int)_BLOCK_SIZE / sizeof(bid_t))
 #define _DIRBLOCK_PADDING (_BLOCK_SIZE - _DIRBLOCK_ITEM_SIZE)
@@ -82,7 +82,6 @@ public:
         bid_t indexList[_BLOCK_INDEX_SIZE]; // 文件内容的块索引表
         char name [_FILENAME_MAXLEN + 1]; //文件名
         char owner[_USERNAME_MAXLEN + 1]; //文件所有者
-        char group[_USERNAME_MAXLEN + 1]; //文件所有组
         char mode[3]; // 文件权限
         char type; // 文件类型: 'L'链接文件，'D'目录文件，'F'普通文件
         char padding[_INODE_PADDING];
@@ -332,10 +331,10 @@ public:
      */
     //TODO: test getINode
     INode * getINode(INode * curINode, string fileName) {
-        DirBlock * dirBlock = newDirBlock();
         INode * iNode = newINode();
+        DirBlock * dirBlock = newDirBlock();
         for (int i = 0; i < curINode->blocks; ++ i) {
-            _vhdc.readBlock((char *)dirBlock, * getBlockID(*iNode, i));
+            _vhdc.readBlock((char *)dirBlock, * getBlockID(*curINode, i));
             for (int j = 0; i * _DIRBLOCK_ITEM_SIZE + j < curINode->childCount
                 && j < _DIRBLOCK_ITEM_SIZE; ++ j) {
                 _vhdc.readBlock((char *)iNode, dirBlock->itemList[j]);
@@ -531,7 +530,7 @@ public:
             for (int i = 0; i < dirINode.blocks - 1; i++) {
                 auto * blockID  = getBlockID(dirINode, i) ;
                 DirBlock * dirBlock = newDirBlock();
-                _vhdc.readBlock((char *) dirBlock,*blockID);
+                _vhdc.readBlock((char *) dirBlock, *blockID);
                 for (int j = 0; j < _DIRBLOCK_ITEM_SIZE; j++) {
                     INode * iNode = newINode();
                     _vhdc.readBlock((char *) iNode,dirBlock->itemList[j]);
@@ -542,10 +541,9 @@ public:
             bid_t * blockID = getBlockID(dirINode, dirINode.blocks - 1);
             DirBlock * dirBlock = newDirBlock();
             _vhdc.readBlock((char *) dirBlock, *blockID);
-            for(int i=0;i<offset;i++)
-            {
+            for(int i = 0; i < offset; i ++) {
                 INode * iNode = newINode();
-                _vhdc.readBlock((char *) iNode,dirBlock->itemList[i]);
+                _vhdc.readBlock((char *) iNode, dirBlock->itemList[i]);
                 result.push_back(iNode);
             }
         }
@@ -610,25 +608,22 @@ public:
         return true;
     }
 
-
-
-    //TODO: test createFile
-    INode * createFile(INode * curINode, string fileName, string curUser) { //创建文件
-//        if (!accessible(*curINode, mode::write)) return nullptr;
-//        cout << "in createFile()" << endl;
-        INode * iNode = newINode();
-        if(fileName.length()>_FILENAME_MAXLEN)
-        {
-            cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
+    // -3: exists; -2: long name; -1: distribute failed
+    INode * createFile(int &error, INode * curINode, string fileName, string curUser) { //创建文件
+        INode * iNode = nullptr;
+        error = 0;
+        if (fileName.length() > _FILENAME_MAXLEN) {
+            //cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
+            error = -2;
             return nullptr;
         }
-        if(!exists(curINode, fileName))//重名等其他判断
-        {
+        if(!exists(curINode, fileName)) { //重名等其他判断
+            iNode = newINode();
             //申请块，I节点
             bid_t blockID;
-            if(!_fbc.distribute(blockID))
-            {
+            if (!_fbc.distribute(blockID)) {
                 cout<<"distribute inode block failed!"<<endl;
+                error = -1;
                 return nullptr;
             }
             iNode->ctime = iNode->mtime = time(nullptr);
@@ -641,16 +636,15 @@ public:
             iNode->parentDir = curINode->bid;
             addDirChild(*curINode, *iNode);
             auto * firstBlock = new bid_t;
-            if(!_fbc.distribute(*firstBlock))
-            {
+            if(!_fbc.distribute(*firstBlock)) {
                 cout<<"distribute block failed!"<<endl;
+                error = -1;
                 return nullptr;
             }
             push(*iNode, *firstBlock);
             _vhdc.writeBlock((char *)iNode,iNode->bid);
         }
-        else
-            std::cout<<"the file already exists,please give a different filename! "<<endl;
+        else error = -3;
         return iNode;
     }
 

@@ -161,7 +161,7 @@ public:
         return _fsc[partNum]->parsePath(iNode, fileName);
     }
 
-    INode * createFile(string fileName, string curUser) {
+    INode * createFile(int &error, string fileName, string curUser) {
         size_t index = fileName.rfind('/');
         string path;
         if (index == string::npos) {
@@ -172,7 +172,7 @@ public:
         }
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode || !accessible(iNode, mode::write)) return nullptr;
-        return _fsc[partNum]->createFile(iNode, std::move(fileName), std::move(curUser));
+        return _fsc[partNum]->createFile(error, iNode, std::move(fileName), std::move(curUser));
     }
 
     vector<INode *> listDir(string path) {
@@ -215,6 +215,15 @@ public:
             }
         }
         return false;
+    }
+
+    char groupOf(const string &user) {
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            if (_userData.userNames[i] == user) {
+                return _userData.userGroup[i];
+            }
+        }
+        return '-';
     }
 
     // 一些GUI界面，本应在APP类中，但产生了互相依赖
