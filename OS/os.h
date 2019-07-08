@@ -90,6 +90,11 @@ public:
         // 改写安装标志位
         installFlag.installed = true;
         _vhdc->writeBlock((char *) & installFlag, _sysPartMin + _INSTALL_FLAG_OFFSET);
+
+
+        // 初始化上次登陆时间
+        userData.loginTime = 0;
+        _vhdc->writeBlock((char *) & userData, _sysPartMin + _USER_DATA_OFFSET);
         return true;
     }
     string initPassword() {

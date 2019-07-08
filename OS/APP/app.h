@@ -83,6 +83,7 @@ public:
 //        password = _inputPassword(_PASSWORD_LENGTH);
         userName = "root";
         password = "123456";
+        fflush(stdin);
         if (!_vfs.matchPassword(userName, password)) return false;
         cout << "Last login: " << _vfs.getLoginTime() << endl;
         cout << "Welcome to VirtualMachine X!" << endl;
@@ -97,7 +98,7 @@ public:
 
     bool touch(vector<string> &param) {
         if (param.empty()) {
-            cout << missParam("touch", "<fileName>");
+            cout << missParam("touch", "<fileName>") << endl;
             return false;
         } else if (!_vfs.createFile(param[0], _vfs.curUserName())) {
             cout << "Failed to create file" << endl;

@@ -117,6 +117,9 @@ public:
     }
 
     void saveInfo() {
+        for (int i = 0; i < _partData.partCount; ++ i) {
+            _fsc[i]->_fbc.saveSuperBlock();
+        }
         _vhdc->writeBlock((char *) &_userData, _sysPartMin + _USER_DATA_OFFSET);
         _vhdc->writeBlock((char *) &_partData, _sysPartMin + _PART_DATA_OFFSET);
     }
