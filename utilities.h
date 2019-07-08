@@ -16,9 +16,11 @@
 #include <ctime>
 #include <cctype>
 #include <cstdlib>
+#include <windows.h>
 #include <conio.h>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 using std::string;
 using std::vector;
