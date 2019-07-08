@@ -598,11 +598,12 @@ public:
             DirBlock * dirBlock = newDirBlock();
             _vhdc.readBlock((char *) dirBlock,*blockID);
             _fbc.recycle(* blockID);
-            for(int i=0;i<offset;i++) {
+            for(int i = 0; i < offset; i++) {
                 INode * dirINode = newINode();
-                _vhdc.readBlock((char *) dirINode,dirBlock->itemList[i]);
+                _vhdc.readBlock((char *) dirINode, dirBlock->itemList[i]);
                 removeFile(*dirINode);
             }
+            _vhdc.readBlock((char *) &file, file.bid);
             removeFile(file);
         }
         else if(file.type=='F') { //普通文件
@@ -635,7 +636,8 @@ public:
     }
 
     void workingDir(string &path, INode * iNode) {
-        path = string(iNode->name) + "/" + path;
+        if (path.empty()) path = string(iNode->name);
+        else path = string(iNode->name) + "/" + path;
         if (iNode->parentDir == _minBlockID) return;
         INode * parent = parentINode(iNode);
         workingDir(path, parent);

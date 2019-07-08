@@ -201,6 +201,7 @@ public:
 
     // -3: not exists; -4: no right
     bool changeDir(int &error, string path) {
+        if (path == ".") return true;
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode) {
             error = -3;
@@ -211,7 +212,6 @@ public:
             return false;
         }
         _vhdc->writeBlock((char *) curINode, curINode->bid);
-        delete curINode;
         curINode = iNode;
         curPart = partNum;
         return true;
