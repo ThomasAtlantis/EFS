@@ -690,12 +690,7 @@ public:
             filePointer->iNode = iNode;
             filePointer->type = type;
             return filePointer;
-        }
-        else
-        {
-            cout<<"the file is not existed!"<<endl;
-        }
-        return nullptr;
+        } else return nullptr;
     }
 
     Buffer * readFile(FilePointer fp) {
@@ -748,6 +743,7 @@ public:
                 _fbc.distribute(blockID);
                 push(*fp.iNode, blockID);
                 fp.iNode->bytes = static_cast<unsigned int>(size % _BLOCK_SIZE);
+                fp.iNode->size = static_cast<unsigned int>(size);
                 _vhdc.writeBlock(p, blockID);
             }
         } else if (fp.type & fio::out) {

@@ -242,6 +242,22 @@ public:
         return (iNode->mode[attrGroup] & mode);
     }
 
+    Buffer * readFile(int &error, string fileName) {
+        error = 0;
+        int partNum; INode * iNode = parsePath(partNum, fileName);
+        if (!iNode) { error = -3; return nullptr; }
+        if (!accessible(iNode, mode::read)) { error = -4; return nullptr;}
+        return _fsc[partNum]->readFile({iNode, fio::in});
+    }
+
+    bool writeFile(int &error, string fileName, Buffer buffer) {
+        error = 0;
+        int partNum; INode * iNode = parsePath(partNum, fileName);
+        if (!iNode) { error = -3; return false; }
+        if (!accessible(iNode, mode::write)) { error = -4; return false;}
+        return _fsc[partNum]->writeFile({iNode, fio::out}, buffer);
+    }
+
     string workingDir(int partNum, INode * iNode) {
         string path;
         _fsc[partNum]->workingDir(path, iNode);

@@ -47,6 +47,7 @@ public:
         bind("pwd", pwd, "pwd: pwd\n    Print the name of the current working directory.");
         bind("vim", edit, "vim: vim <fileName>\n    Edit text file.");
         bind("cat", print, "cat: cat <fileName>\n    print the content of text file.");
+        memset(_buffer, 0, WIDTH * HEIGHT);
         history = {""};
     }
 
@@ -74,6 +75,7 @@ public:
 
     bool readCommand() {
         fflush(stdin);
+        /*
         cout << " \b";
         _cmdLine = "";
         union {
@@ -195,7 +197,8 @@ public:
         }
         cout << endl;
         fflush(stdin);
-//        getline(cin, _cmdLine);
+         */
+        getline(cin, _cmdLine);
         if (_cmdLine.empty()) return true;
         history.insert(history.begin() + 1, _cmdLine);
         vector<string> cmdParam = stringTool().split(_cmdLine, " ");
@@ -236,16 +239,29 @@ public:
             cout << missParam("vim", "<fileName>") << endl;
             return false;
         }
-        int error = 0;
+        int error = 0, length = 0;
         string fileName = param[0];
-        strcpy(_buffer, "hello world!");
-        // open
-        // read to buffer
-        // show buffer
+        auto * tmp = _vfs.readFile(error, fileName);
+        if (!tmp) {
+            cout << "vim: cannot access '" << param[0] << "': ";
+            if (error == -3) cout << "No such file";
+            else if (error == -4) cout << "Permission denied";
+            cout << endl;
+            return false;
+        }
+        BufferTool().copy(_buffer, tmp->data, tmp->size);
         system("cls");
         cout << endl;
-        cout << _buffer;
+        for (int i = 0; i < tmp->size; ++ i) {
+            if (_buffer[i] == '\0') cout << " ";
+            else if (_buffer[i] <= 126 && _buffer[i] >= 32) cout << _buffer[i];
+            else cout << "?";
+            if ((i + 1) % WIDTH == 0) cout << endl;
+        }
+        Buffer forWrite {_buffer, 0};
         bool overFlag = false;
+        bool cutFlag = false;
+        bool saveFlag = false;
         hout = GetStdHandle(STD_OUTPUT_HANDLE);
         MSG msg = {0};
         HWND hConsole = GetActiveWindow();
@@ -275,15 +291,30 @@ public:
                             ch[0] = static_cast<char>(getch());
                         }
                         if (!loop) break;
-                        if (cmd == "q") {
-                            overFlag = true;
-                            break;
+                        for (auto c: cmd) {
+                            if (c == 'q') {
+                                overFlag = true;
+                            } else if (c == 'w') {
+                                saveFlag = true;
+                            } else if (c == 'c') {
+                                cutFlag = true;
+                            }
                         }
+                        if (!cutFlag) {
+                            forWrite.size = std::max(forWrite.size, tmp->size);
+                            cutFlag = false;
+                        }
+                        if (saveFlag) {
+                            _vfs.writeFile(error, fileName, forWrite);
+                            if (!overFlag) saveFlag = false;
+                        }
+                        if (overFlag) break;
                         _gotoXY(hout, 1, 0);
                         cout << "          ";
                         _gotoXY(hout, 1, 0);
                     }
                 } else if (msg.wParam == 1) {
+                    UnregisterHotKey(hConsole, 1);
                     _gotoXY(hout, 0, 0);
                     cout << "< INSERT >";
                     int x = 0, y = 1;
@@ -317,14 +348,21 @@ public:
                         } else if (symbol.ch[0] == '\b') {
                             if (x == WIDTH) {
                                 cout << " \b\b \b";
+                                _buffer[(y - 1) * WIDTH + x] = '\0';
+                                forWrite.size = std::max(forWrite.size, size_t((y - 1) * WIDTH + x));
                                 x = x - 1;
+                                _buffer[(y - 1) * WIDTH + x] = '\0';
                             } else if (x > 0) {
                                 cout << "\b \b";
                                 x = x - 1;
+                                _buffer[(y - 1) * WIDTH + x] = '\0';
+                                forWrite.size = std::max(forWrite.size, size_t((y - 1) * WIDTH + x));
                             }
                         } else if (symbol.ch[0] >= 32 && symbol.ch[0] <= 126) {
                             if (x <= WIDTH) {
-                                cout << symbol.ch ;
+                                cout << symbol.ch;
+                                _buffer[(y - 1) * WIDTH + x] = symbol.ch[0];
+                                forWrite.size = std::max(forWrite.size, size_t((y - 1) * WIDTH + x + 1));
                                 if (x < WIDTH) {
                                     x = x + 1;
                                 }
@@ -336,6 +374,7 @@ public:
                     cout << "           ";
                     _gotoXY(hout, 0, 0);
                     fflush(stdin);
+                    RegisterHotKey(hConsole, 1, 0x4000, 'I');
                 }
             }
             if (overFlag) break;
@@ -343,11 +382,35 @@ public:
         UnregisterHotKey(hConsole, 0);
         UnregisterHotKey(hConsole, 1);
         system("cls");
-        // save buffer
+        if (saveFlag) cout << "All revision saved" << endl;
+        if (cutFlag) cout << "File cut by last revision" << endl;
         return true;
     }
 
     bool print(vector<string> &param) {
+        if (param.empty()) {
+            cout << missParam("vim", "<fileName>") << endl;
+            return false;
+        }
+        int error = 0, length = 0;
+        string fileName = param[0];
+        auto * tmp = _vfs.readFile(error, fileName);
+        if (!tmp) {
+            cout << "vim: cannot access '" << param[0] << "': ";
+            if (error == -3) cout << "No such file";
+            else if (error == -4) cout << "Permission denied";
+            cout << endl;
+            return false;
+        }
+        for (int i = 0; i < tmp->size; ++ i) {
+            if (tmp->data[i] == '\0') cout << " ";
+            else if (tmp->data[i] <= 126 && tmp->data[i] >= 32)
+                cout << tmp->data[i];
+            else cout << "?";
+            if ((i + 1) % WIDTH == 0) cout << endl;
+        }
+        cout << endl;
+        delete tmp;
         return true;
     }
 
