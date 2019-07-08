@@ -175,6 +175,16 @@ public:
         return _fsc[partNum]->createFile(error, iNode, std::move(fileName), std::move(curUser));
     }
 
+    bool removeFile(int partNum, INode * iNode) {
+        INode * parent = _fsc[partNum]->parentINode(iNode);
+        if (!iNode || !accessible(parent, mode::write)) return false;
+        int size = -iNode->size;
+        _fsc[partNum]->changeParentSize(iNode, size);
+        bool result =  _fsc[partNum]->removeFile(*iNode);
+        _fsc[curPart]->_vhdc.readBlock((char *) curINode, curINode->bid);
+        return result;
+    }
+
     vector<INode *> listDir(string path) {
         int partNum; INode * iNode = parsePath(partNum, path);
         if (!iNode || !accessible(iNode, mode::read)) return {};

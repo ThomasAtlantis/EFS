@@ -493,36 +493,37 @@ public:
      * @param child
      * @return
      */
-     // TODO: test removeDirChild
     bool removeDirChild(INode &dirINode, INode &child) {
-//         if (!accessible(dirINode, mode::write)) return false;
-        DirBlock * dirBlock = newDirBlock();
-        int index = dirINode.childCount / _DIRBLOCK_ITEM_SIZE;
-        int offset = dirINode.childCount % _DIRBLOCK_ITEM_SIZE;
+        DirBlock * lastDirBlock = newDirBlock();
+        int index = (dirINode.childCount - 1) / _DIRBLOCK_ITEM_SIZE;
+        int offset = (dirINode.childCount - 1) % _DIRBLOCK_ITEM_SIZE;
         bid_t * blockID = getBlockID(dirINode, index);
-        _vhdc.readBlock((char *) dirBlock, * blockID);
-        for(int i=0;i<offset;i++)
-        {
-            if(dirBlock->itemList[i]==child.bid)
-            {
-                for(int j=i;j<offset-1;j++)
-                {
-                    dirBlock->itemList[j]=dirBlock->itemList[j+1];
+        _vhdc.readBlock((char *) lastDirBlock, * blockID);
+        bid_t lastChildID = lastDirBlock->itemList[offset];
+
+        DirBlock * dirBlock = newDirBlock();
+        for (int i = 0; i < dirINode.blocks; ++ i) {
+            bid_t * tmp = getBlockID(dirINode, i);
+            _vhdc.readBlock((char *)dirBlock, *tmp);
+            for (int j = 0; i * _DIRBLOCK_ITEM_SIZE + j < dirINode.childCount
+                            && j < _DIRBLOCK_ITEM_SIZE; ++ j) {
+                if (dirBlock->itemList[j] == child.bid) {
+                    dirBlock->itemList[j] = lastChildID;
+                    _vhdc.writeBlock((char *)dirBlock, *tmp);
+                    dirINode.childCount --;
+                    _vhdc.writeBlock((char *) & dirINode, dirINode.bid);
+                    return true;
                 }
             }
         }
-        dirINode.childCount --;
-        _vhdc.writeBlock((char *) & dirINode, dirINode.bid);
-        return true;
+        return false;
     }
     /**
      * 返回文件夹的子文件i节点vector
      * @param dirINode
      * @return
      */
-    // TODO: test listDir
     vector<INode *> listDir(INode &dirINode) {
-//        if (!accessible(dirINode, mode::read)) return {};
         vector <INode *> result;
         if(dirINode.type=='F'||(dirINode.type=='D'&&isEmptyDir(dirINode))) { // 文件或空文件夹
             return {};
@@ -550,11 +551,8 @@ public:
         return result;
     }
 
-    // TODO: test removeFile
     bool removeFile(INode &file) { //输入此文件（夹）的I节点，删除此文件（夹）
-//        if (!accessible(file, mode::write)) return false;
-        if(file.type=='D'&&isEmptyDir(file))//空的文件夹
-        {
+        if (file.type == 'D' && isEmptyDir(file)) { //空的文件夹
             //找到父节点删除此节点信息
             //删除此节点
             INode * parentINode = newINode();
@@ -563,18 +561,14 @@ public:
             bid_t * blockID = pop(file);
             _fbc.recycle(* blockID);//回收此节点块和此文件块
             _fbc.recycle(file.bid);
-        }
-        else if(file.type=='D')//非空文件夹
-        {
+        } else if (file.type == 'D') { //非空文件夹
             // 递归删除此文件夹下的所有子文件
-            for(int i=0;i<file.blocks-1;i++)
-            {
+            for(int i=0;i<file.blocks-1;i++) {
                 bid_t * blockID = pop(file);
                 DirBlock * dirBlock = newDirBlock();
                 _vhdc.readBlock((char *) dirBlock,*blockID);
                 _fbc.recycle(* blockID);
-                for(int j=0;j<_DIRBLOCK_ITEM_SIZE;j++)
-                {
+                for (int j = 0; j < _DIRBLOCK_ITEM_SIZE; j++) {
                     INode * dirINode = newINode();
                     _vhdc.readBlock((char *) dirINode,dirBlock->itemList[j]);
                     removeFile(*dirINode);
@@ -585,16 +579,14 @@ public:
             DirBlock * dirBlock = newDirBlock();
             _vhdc.readBlock((char *) dirBlock,*blockID);
             _fbc.recycle(* blockID);
-            for(int i=0;i<offset;i++)
-            {
+            for(int i=0;i<offset;i++) {
                 INode * dirINode = newINode();
                 _vhdc.readBlock((char *) dirINode,dirBlock->itemList[i]);
                 removeFile(*dirINode);
             }
             removeFile(file);
         }
-        else if(file.type=='F')//普通文件
-        {
+        else if(file.type=='F') { //普通文件
             INode * parentINode = newINode();
             _vhdc.readBlock((char *) parentINode,file.parentDir);
             removeDirChild(*parentINode,file);
@@ -608,12 +600,25 @@ public:
         return true;
     }
 
+    INode * parentINode(INode * iNode) {
+        INode * parent = newINode();
+        _vhdc.readBlock((char *) parent, iNode->parentDir);
+        return parent;
+    }
+
+    void changeParentSize(INode * iNode, int size) {
+        if (size == 0 || iNode->parentDir == _minBlockID) return;
+        INode * parent = parentINode(iNode);
+        parent->size += size;
+        _vhdc.writeBlock((char *) parent, parent->bid);
+        changeParentSize(parent, size);
+    }
+
     // -3: exists; -2: long name; -1: distribute failed
     INode * createFile(int &error, INode * curINode, string fileName, string curUser) { //创建文件
         INode * iNode = nullptr;
         error = 0;
         if (fileName.length() > _FILENAME_MAXLEN) {
-            //cout<<"sorry, the length of filename is too long.(please no mre than char[20].)"<<endl;
             error = -2;
             return nullptr;
         }

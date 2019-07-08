@@ -1,4 +1,4 @@
-touch aaa
+touch abc
+rm -f abc
 ld
-touch ddd
 exit

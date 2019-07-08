@@ -24,7 +24,6 @@ private:
         bool (App::*func)(vector<string>&);
     } Command;
     VFSController &_vfs; // 虚拟文件系统
-    INode * _curINode;
     Screen _screen;
     string _curPath = "~";
     string _symbol = "#";
@@ -38,6 +37,7 @@ public:
         bind("touch", touch, "touch: touch <fileName>\n    Create a new empty file.");
         bind("ld", listDir, "ld: ld [-s|-l] [dirName]\n    list files in a directory.");
         bind("clear", clear, "clear: clear\n    clear the screen.");
+        bind("rm", remove, "rm: rm [-r][-f] <fileName>\n    remove a file.");
     }
 
     bool run() {
@@ -63,7 +63,7 @@ public:
     }
 
     bool readCommand() {
-//        fflush(stdin);
+        fflush(stdin);
         getline(cin, _cmdLine);
         vector<string> cmdParam = stringTool().split(_cmdLine, " ");
         string cmdName = cmdParam[0];
@@ -93,8 +93,9 @@ public:
     }
 
     string missParam(string cmd, const string &paramName) {
-        return cmd.append(": missing param ").append(paramName)
-            .append("\nTry 'help ").append(cmd).append("' for more information.");
+        string result = cmd + ": missing param " + paramName
+            + "\nTry 'help " + cmd + "' for more information.";
+        return result;
     }
 
     bool touch(vector<string> &param) {
@@ -118,6 +119,61 @@ public:
         return true;
     }
 
+    bool remove(vector<string> &vec) {
+        string fileName = _parseArgum(vec);
+        if (fileName.empty()) {
+            cout << missParam("touch", "<fileName>") << endl;
+            return false;
+        }
+        string params = _parseParam(vec);
+        bool confirmFlag = true;
+        bool recursive = false;
+        for (auto p: params) {
+            if (p == 'f') confirmFlag = false;
+            if (p == 'r') recursive = true;
+        }
+        return _remove(fileName, confirmFlag, recursive);
+    }
+
+    bool _remove(string fileName, bool confirmFlag, bool recursive) {
+        int partNum;
+        INode * iNode = _vfs.parsePath(partNum, fileName);
+        if (!iNode) {
+            cout << "rm: cannot remove '" << fileName << "': No such file or directory" << endl;
+            return false;
+        }
+        if (iNode->type == 'D' && !recursive) {
+                cout << "rm: cannot remove '" << fileName << "': Is a directory" << endl;
+                return false;
+        }
+        if (confirmFlag) {
+            if (iNode->type == 'F') {
+                cout << "rm: remove regular file '" << fileName << "'?(y/n) ";
+            } else if (iNode->type == 'D') {
+                cout << "rm: remove directory '" << fileName << "'?(y/n) ";
+            }
+            char option;
+            do {
+                cin >> option;
+            } while (option != 'y' && option != 'n');
+            fflush(stdin);
+            if (option == 'n') return false;
+        }
+        return _vfs.removeFile(partNum, iNode);
+    }
+
+    void _sortByName(vector<INode *> &list) {
+        for (int i = 0; i < list.size(); ++ i) {
+            for (int j = i + 1; j < list.size(); ++ j) {
+                if (strcmp(list[i]->name, list[j]->name) > 0) {
+                    INode * tmp = list[i];
+                    list[i] = list[j];
+                    list[j] = tmp;
+                }
+            }
+        }
+    }
+
     // 默认为短形式
     bool listDir(vector<string> &param) {
         string dirName = ".";
@@ -131,6 +187,7 @@ public:
             dirName = param[1];
         }
         vector<INode *> list = _vfs.listDir(dirName);
+        _sortByName(list);
         if (longFlag) {
             for (auto iNode: list) {
                 cout << lower(iNode->type);
@@ -180,6 +237,21 @@ public:
         }
         return true;
     };
+
+    string _parseArgum(vector<string> &param) {
+        for (auto p: param) {
+            if (p[0] != '-') return p;
+        }
+        return "";
+    }
+
+    string _parseParam(vector<string> &param) {
+        string result;
+        for (auto p: param) {
+            if (p[0] == '-') result += p.substr(1, p.length() - 1);
+        }
+        return result;
+    }
 
     string _inputPassword(int size = _PASSWORD_LENGTH) {
         int ch, p = 0;
