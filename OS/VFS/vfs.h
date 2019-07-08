@@ -128,7 +128,7 @@ public:
         INode * iNode = nullptr;
         if (!fileName.empty() && fileName[0] == '/') {
             size_t index = fileName.find('/', 1);
-            string partName = fileName.substr(0, index - 1);
+            string partName = fileName.substr(0, index);
             for (int i = 0; i < _partData.partCount; ++i) {
                 if (_partData.partNames[i] == partName) {
                     if (index != string::npos && index < fileName.length() - 1)
