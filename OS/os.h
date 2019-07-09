@@ -105,17 +105,17 @@ public:
         string password = "123456";
         #else
         int failCount = 0;
-        string password = _inputPassword();
+        string password = _cli->_inputPassword();
         while (true) {
             cout << ">> Repeat password: ";
-            string repeat = _inputPassword();
+            string repeat = _cli->_inputPassword();
             if (repeat == password) break;
             else {
                 cout << "Wrong Repetition!" << endl;
                 if (failCount ++ == 3) {
                     cout << "rollback ... " << endl;
                     cout << ">> Initial password: ";
-                    password = _inputPassword();
+                    password = _cli->_inputPassword();
                 }
             }
         }

@@ -64,8 +64,10 @@ typedef struct {
 // -1: 分配失败;
 // -2: 空值错误;
 // -3: 存在冲突;
+// -4: 缺少权限;
 // -5: 名称超长;
 // -6: 语法错误;
+// -7: 数量上限;
 
 class FSController {
 private:
@@ -564,6 +566,13 @@ public:
             result.push_back(curINode);
         }
         return result;
+    }
+
+    void passToAdmin(INode * iNode) {
+        strcpy(iNode->owner, _SUPERADMIN_NAME);
+        iNode->ctime = time(nullptr);
+        vector<INode *> list = listDir(*iNode, false);
+        for (auto l: list) passToAdmin(l);
     }
 
     INode * newINode(INode * iNode) {

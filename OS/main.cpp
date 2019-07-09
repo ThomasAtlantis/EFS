@@ -1,5 +1,8 @@
 #include "os.h"
 
+#undef DEBUG
+#define DEBUG 1
+
 int main(int argc, char * argv[]) {
     #if DEBUG
     vector<string> diskLocations {
@@ -10,12 +13,12 @@ int main(int argc, char * argv[]) {
     bid_t sliceStart = _OS_PART_BLOCK_SIZE;
     #else
     vector<string> diskLocations(3);
-    bid_t sliceNum = _OS_PART_BLOCK_SIZE;
+    bid_t sliceStart = _OS_PART_BLOCK_SIZE;
     for (int i = 1; i < argc; ++ i) {
         if (!strcmp(argv[i], "-m")) diskLocations[0] = argv[i + 1];
         else if (!strcmp(argv[i], "-v")) diskLocations[1] = argv[i + 1];
         else if (!strcmp(argv[i], "-p")) diskLocations[2] = argv[i + 1];
-        else if (!strcmp(argv[i], "-i")) sliceNum = static_cast<bid_t>(std::stol(string(argv[i + 1])));
+        else if (!strcmp(argv[i], "-s")) sliceStart = static_cast<bid_t>(std::stol(string(argv[i + 1])));
     }
     #endif
     try {

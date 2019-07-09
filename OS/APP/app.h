@@ -12,7 +12,7 @@
 using std::ifstream;
 using std::ofstream;
 
-#define DEBUG 1
+#define DEBUG 0
 #define WIDTH 108
 #define HEIGHT 50
 
@@ -46,7 +46,10 @@ public:
         bind("cd", changeDir, "cd: cd <DirName>\n    Change the current working directory.");
         bind("pwd", pwd, "pwd: pwd\n    Print the name of the current working directory.");
         bind("vim", edit, "vim: vim <fileName>\n    Edit text file.");
-        bind("cat", print, "cat: cat <fileName>\n    print the content of text file.");
+        bind("cat", print, "cat: cat <fileName>\n    Print the content of text file.");
+        bind("useradd", useradd, "useradd: useradd [-g <groupNumber>] <userName>\n    Create a normal user.");
+        bind("userdel", userdel, "userdel: userdel [-d|-r] <userName>\n    Delete a normal user.");
+        bind("userinfo", showUserInfo, "userinfo: userinfo [userName]\n    Show information of users.");
         memset(_buffer, 0, WIDTH * HEIGHT);
         history = {""};
     }
@@ -75,7 +78,6 @@ public:
 
     bool readCommand() {
         fflush(stdin);
-        /*
         cout << " \b";
         _cmdLine = "";
         union {
@@ -197,8 +199,7 @@ public:
         }
         cout << endl;
         fflush(stdin);
-         */
-        getline(cin, _cmdLine);
+//        getline(cin, _cmdLine);
         if (_cmdLine.empty()) return true;
         history.insert(history.begin() + 1, _cmdLine);
         vector<string> cmdParam = stringTool().split(_cmdLine, " ");
@@ -215,12 +216,12 @@ public:
     bool login() {
         cout << "login as: ";
         string userName, password;
-//        cin >> userName;
-//        cout << userName << _machineName << "'s password: ";
-//        password = _inputPassword(_PASSWORD_LENGTH);
-        userName = "root";
-        password = "123456";
-//        fflush(stdin);
+        cin >> userName;
+        cout << userName << _machineName << "'s password: ";
+        password = _inputPassword(_PASSWORD_LENGTH);
+//        userName = "root";
+//        password = "123456";
+        fflush(stdin);
         if (!_vfs.matchPassword(userName, password)) return false;
         cout << "Last login: " << _vfs.getLoginTime() << endl;
         cout << "Welcome to VirtualMachine X!" << endl;
@@ -597,6 +598,66 @@ public:
             if (cnt % 8 != 1 && !list.empty()) cout << endl;
         }
         return true;
+    }
+
+    bool showUserInfo(vector<string> &vec) {
+        if (vec.empty()) _vfs.__showUserInfo();
+        else _vfs.__showUserInfo(vec[0]);
+        return true;
+    }
+
+    bool useradd(vector<string> &vec) {
+        char groupNum = 'a';
+        string userName;
+        for (int i = 0; i < vec.size(); ++ i) {
+            if (vec[i] == "-g") {
+                if (i + 2 > vec.size()) {
+                    cout << "useradd: Wrong parameter form" << endl;
+                    return false;
+                }
+                groupNum = vec[++ i][0];
+            } else {
+                userName = vec[i];
+            }
+        }
+        if (userName.empty()) {
+            cout << missParam("useradd", "<userName>") << endl;
+            return false;
+        }
+        int error = 0;
+        cout << "Password: ";
+        string password = _inputPassword(_PASSWORD_LENGTH);
+        if (!_vfs.addUser(error, userName, groupNum, password)) {
+            if (error == -3) {
+                cout << "useradd: cannot add user '" << userName << "': Already exists" << endl;
+            } else if (error == -4) {
+                cout << "useradd: cannot add user '" << userName << "': Permission denied" << endl;
+            }
+            return false;
+        } else return true;
+    }
+
+    bool userdel(vector<string>& vec) {
+        string userName = _parseArgum(vec);
+        if (userName.empty()) {
+            cout << missParam("userdel", "<userName>") << endl;
+            return false;
+        }
+        string params = _parseParam(vec);
+        bool delFlag = false;
+        for (auto p: params) {
+            if (p == 'd') delFlag = true;
+            if (p == 'r') delFlag = false;
+        }
+        int error = 0;
+        if (!_vfs.delUser(error, userName, delFlag)) {
+            if (error == -2) {
+                cout << "adduser: cannot del user '" << userName << "': No such user" << endl;
+            } else if (error == -4) {
+                cout << "adduser: cannot del user '" << userName << "': Permission denied" << endl;
+            }
+            return false;
+        } else return true;
     }
 
     bool help(vector<string> &cmd) {

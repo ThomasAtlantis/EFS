@@ -1,4 +1,0 @@
-touch abc
-rm -f abc
-ld
-exit

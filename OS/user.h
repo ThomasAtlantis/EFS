@@ -9,7 +9,7 @@
 #include "../utilities.h"
 
 #define USER_DATA_PADDING (_BLOCK_SIZE \
-    - sizeof(int) - sizeof(time_t) - _MAX_USERS * (_USERNAME_MAXLEN + _PASSWORD_LENGTH + 1))
+    - sizeof(int) - sizeof(time_t) - _MAX_USERS * (_USERNAME_MAXLEN + _PASSWORD_LENGTH + 2))
 
 #pragma pack(1)
 typedef struct {
@@ -18,7 +18,7 @@ typedef struct {
     time_t loginTime; // 上次访问时间
     int userCount; // 用户数量
     char userNames[_MAX_USERS][_USERNAME_MAXLEN]; // 用户名
-    char passwords[_MAX_USERS][_PASSWORD_LENGTH]; // 用户密码
+    char passwords[_MAX_USERS][_PASSWORD_LENGTH + 1]; // 用户密码
     char userGroup[_MAX_USERS]; // 用户组信息
 
     // 填充

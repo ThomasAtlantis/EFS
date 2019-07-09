@@ -126,6 +126,7 @@ public:
                             _fsc->writeFileFromBuf(iNode, buff, file.size);
                             _fsc->flushDisk();
                             delete buff;
+                            /*
                             Configure configure;
                             configure.installed = false;
                             vector<INode> osFileNames;
@@ -136,6 +137,7 @@ public:
                             }
                             _vhdc->writeBlock((char *) & configure,
                                   osFileNames.size() * _SLICE_BLOCK_SIZE + _CONFIGURE_OFFSET);
+                            */
                             cout << "successfully installed " << USBs[option]
                                  << ": " << file.name << endl;
                             trouble = false;
@@ -182,7 +184,7 @@ public:
         cout << "decompressing " << osFileNames[option].name << " from disk ... ";
         string exeName = majorSlot + FileTool().name(osFileNames[option].name).append(".exe");
         if (_fsc->decompressEXE(exeName, osFileNames[option])) cout << "done" << endl;
-        return exeName.append("-i "+ std::to_string(osFileNames.size() - 1 - option));
+        return exeName.append("-s 4096");
     }
 };
 

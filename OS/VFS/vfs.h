@@ -15,7 +15,7 @@
 #define SYS 0
 #define SHR 1
 #define USR 2
-#define DEBUG 1
+#define DEBUG 0
 
 class VFSController {
 private:
@@ -255,7 +255,13 @@ public:
         int partNum; INode * iNode = parsePath(partNum, fileName);
         if (!iNode) { error = -3; return false; }
         if (!accessible(iNode, mode::write)) { error = -4; return false;}
-        return _fsc[partNum]->writeFile({iNode, fio::out}, buffer);
+        int size = int(buffer.size) - int(iNode->size);
+        bool result = _fsc[partNum]->writeFile({iNode, fio::out}, buffer);
+        if (result) {
+            _fsc[partNum]->changeParentSize(iNode, size);
+            _vhdc->readBlock((char *) curINode, curINode->bid);
+        }
+        return result;
     }
 
     string workingDir(int partNum, INode * iNode) {
@@ -284,6 +290,79 @@ public:
 
     string curUserName() {
         return string(_userData.userNames[_curUser]);
+    }
+
+    bool addUser(int &error, string userName, char groupNum, string password) {
+        error = 0;
+        if (_curUser != 0) {
+            error = -4;
+            return false;
+        }
+        if (_userData.userCount == _MAX_USERS) {
+            error = -7;
+            return false;
+        }
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            if (_userData.userNames[i] == userName) {
+                error = -3;
+                return false;
+            }
+        }
+        if (!_fsc[USR]->exists(_fsc[USR]->rootINode, userName)) {
+            _fsc[USR]->createDir(error, _fsc[USR]->rootINode, userName, _SUPERADMIN_NAME);
+            if (error != 0) return false;
+        }
+        strcpy(_userData.userNames[_userData.userCount], userName.c_str());
+        strcpy(_userData.passwords[_userData.userCount], password.c_str());
+        _userData.userGroup[_userData.userCount] = static_cast<char>(groupNum);
+        _userData.userCount ++;
+        _vhdc->writeBlock((char *) &_userData, _sysPartMin + _USER_DATA_OFFSET);
+        return true;
+    }
+
+    bool delUser(int &error, string userName, bool delFlag) {
+        error = 0;
+        if (_curUser != 0) {
+            error = -4;
+            return false;
+        }
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            if (_userData.userNames[i] == userName) {
+                strcpy(_userData.userNames[i], _userData.userNames[_userData.userCount - 1]);
+                _userData.userGroup[i] = _userData.userGroup[_userData.userCount - 1];
+                _userData.userCount --;
+                _vhdc->writeBlock((char *) &_userData, _sysPartMin + _USER_DATA_OFFSET);
+                if (_fsc[USR]->exists(_fsc[USR]->rootINode, userName)) {
+                    INode * iNode = _fsc[USR]->getINode(_fsc[USR]->rootINode, userName);
+                    if (delFlag) {
+                        _fsc[USR]->removeFile(*iNode);
+                        _vhdc->readBlock((char *) _fsc[USR]->rootINode, _fsc[USR]->rootINode->bid);
+                    } else {
+                        _fsc[USR]->passToAdmin(iNode);
+                    }
+                }
+                return true;
+            }
+        }
+        error = -2;
+        return false;
+    }
+
+    void __showUserInfo() {
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            cout << _userData.userNames[i] << "\t" << _userData.userGroup[i]
+                 << "\t" << _userData.passwords[i] << endl;
+        }
+    }
+
+    void __showUserInfo(string userName) {
+        for (int i = 0; i < _userData.userCount; ++ i) {
+            if (userName == _userData.userNames[i]) {
+                cout << _userData.userNames[i] << "\t" << _userData.userGroup[i]
+                     << "\t" << _userData.passwords[i] << endl;
+                break;
+            }
+        }
     }
 
     bool matchPassword(const string &userName, const string &password) {
@@ -351,7 +430,6 @@ public:
             text = inputText();
             sysSize = static_cast<bid_t>(std::stoi(text));
         }
-        showPartSize(sysSize, _sliceSize);
         return sysSize;
     }
 };
